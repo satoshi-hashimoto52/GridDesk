@@ -747,7 +747,21 @@ function App() {
       <div className="appBackgroundOverlay" />
       <div className="appContent">
       <header className="appHeader">
+        <div className="windowControls" aria-label="ウィンドウ操作">
+          <button type="button" className="windowButton close" aria-label="閉じる" onClick={() => api.closeWindow?.()} />
+          <button type="button" className="windowButton minimize" aria-label="最小化" onClick={() => api.minimizeWindow?.()} />
+          <button type="button" className="windowButton maximize" aria-label="最大化" onClick={() => api.toggleMaximizeWindow?.()} />
+        </div>
         <div className="appHeaderLeft">
+          <button
+            type="button"
+            className="sidebarToggleInHeader"
+            title={settings.ui.sidebarCollapsed ? "サイドバーを展開" : "サイドバーを折りたたむ"}
+            aria-label={settings.ui.sidebarCollapsed ? "サイドバーを開く" : "サイドバーを閉じる"}
+            onClick={() => updateSettings({ ui: { sidebarCollapsed: !settings.ui.sidebarCollapsed } })}
+          >
+            {settings.ui.sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
           <span className="appHeaderTitle">GridDesk</span>
           <span className="appHeaderPath">{workspace ? workspace.workspacePath : "No workspace open"}</span>
         </div>
@@ -782,14 +796,6 @@ function App() {
                   <span className="sidebarHeaderTitle">GridDesk</span>
                 </div>
               )}
-              <button
-                type="button"
-                className="sidebarCollapseButton"
-                title={settings.ui.sidebarCollapsed ? "サイドバーを展開" : "サイドバーを折りたたむ"}
-                onClick={() => updateSettings({ ui: { sidebarCollapsed: !settings.ui.sidebarCollapsed } })}
-              >
-                {settings.ui.sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-              </button>
             </div>
 
             {!settings.ui.sidebarCollapsed && (

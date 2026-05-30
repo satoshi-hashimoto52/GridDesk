@@ -430,6 +430,24 @@ app.on("activate", () => {
 
 ipcMain.handle("app:getState", () => readJson(appStatePath(), { recentWorkspaces: [] }));
 
+ipcMain.handle("window:close", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
+});
+
+ipcMain.handle("window:minimize", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.minimize();
+});
+
+ipcMain.handle("window:toggleMaximize", (event) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!browserWindow) return;
+  if (browserWindow.isMaximized()) {
+    browserWindow.unmaximize();
+  } else {
+    browserWindow.maximize();
+  }
+});
+
 ipcMain.handle("window:setWidth", async (event, width) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
   if (!browserWindow) return { ok: false, error: "BrowserWindow not found" };

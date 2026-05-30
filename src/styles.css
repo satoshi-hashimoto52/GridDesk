@@ -72,7 +72,10 @@ a,
 .settings-button,
 .tab,
 .tab-button,
-.window-control {
+.window-control,
+.windowControls,
+.windowButton,
+.sidebarToggleInHeader {
   -webkit-app-region: no-drag;
 }
 
@@ -205,14 +208,14 @@ label {
 }
 
 .appHeader {
-  height: 42px;
-  min-height: 42px;
+  height: 32px;
+  min-height: 32px;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 16px;
-  padding: 6px 18px 6px 76px;
+  gap: 12px;
+  padding: 4px 10px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--gd-border-subtle);
   background: rgba(246, 247, 244, var(--gd-panel-opacity, 0.85));
@@ -221,18 +224,71 @@ label {
   -webkit-app-region: drag;
 }
 
+.windowControls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.windowButton {
+  width: 12px;
+  min-width: 12px;
+  height: 12px;
+  min-height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  padding: 0;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.windowButton.close {
+  background: #ff5f57;
+}
+
+.windowButton.minimize {
+  background: #ffbd2e;
+}
+
+.windowButton.maximize {
+  background: #28c840;
+}
+
+.windowButton:hover {
+  filter: brightness(0.95);
+}
+
 .appHeaderLeft {
   display: flex;
-  align-items: baseline;
-  gap: 14px;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   -webkit-app-region: drag;
 }
 
+.sidebarToggleInHeader {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--gd-border-subtle);
+  border-radius: 7px;
+  padding: 0;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.18);
+  -webkit-app-region: no-drag;
+}
+
 .appHeaderTitle {
   flex-shrink: 0;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1;
 }
@@ -241,7 +297,7 @@ label {
   min-width: 0;
   overflow: hidden;
   color: #69756f;
-  font-size: 12px;
+  font-size: 11px;
   opacity: 0.72;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -395,9 +451,12 @@ label {
 
 .workspace.sidebarCollapsed .sidePanel,
 .workspace.sidebarCollapsed .sidebar {
-  width: 44px;
-  min-width: 44px;
-  max-width: 44px;
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  padding: 0;
+  border-right: 0;
+  overflow: hidden;
 }
 
 .sidebarHeader {
@@ -410,15 +469,6 @@ label {
   box-sizing: border-box;
   border-bottom: 1px solid var(--gd-border-subtle);
   flex-shrink: 0;
-}
-
-.workspace.sidebarCollapsed .sidebarHeader {
-  justify-content: center;
-  padding: 8px;
-}
-
-.workspace.sidebarCollapsed .sidebarCollapseButton {
-  margin-left: 0;
 }
 
 .sidebarTitle {
@@ -445,22 +495,6 @@ label {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 12px;
-}
-
-.sidebarCollapseButton {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
-  margin-left: auto;
-  padding: 0;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--gd-border-subtle);
-  border-radius: 8px;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
 }
 
 .sidebarScroll::-webkit-scrollbar,
