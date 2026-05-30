@@ -1,546 +1,395 @@
-# GridDesk 修正指示：セル設定の追加調整とウィンドウ幅自動フィット修正
+以下をそのまま Codex に渡してください。
+今回は **ウィンドウボタン・サイドバー開閉ボタン・上部タブ高さ** の3点だけに絞ります。
 
-今回は以下の2点のみ対応してください。
+````markdown
+# GridDesk 修正指示：ウィンドウボタン・サイドバー開閉ボタン・上部タブ高さ調整
 
-1. セル設定の「ラベル文字サイズ」をもっと小さく設定できるようにする
-2. セル設定で「ラベル文字のフォント」を選択できるようにする
-3. セル幅・セル高さ・セル間隔を小さくした後、ウィンドウ幅自動フィットが追従しない問題を修正する
+今回は以下の3点だけ修正してください。
+
+1. ウィンドウボタン3つに色を付ける
+2. 左サイドバー開閉ボタンをアプリ名の左へ移動し、macOS風ウィンドウボタンと重ならないようにする
+3. UI上部タブの高さをできるだけ詰めて、ベゼルを細くする
 
 ## 禁止事項
 
 今回は以下を触らないでください。
 
-* 右クリックメニュー
-* ファイル/フォルダ起動処理
-* 削除モード
-* DBスキーマ
-* Electron main/preload の大規模変更
-* 背景透過/ブラー
-* サイドバー構造
-* カテゴリ管理ロジック
-* アイコン編集機能
-* ドラッグ移動処理
+- ファイル/フォルダ起動処理
+- 右クリックメニュー
+- 削除モード
+- セル登録ロジック
+- DBスキーマ
+- 背景透過/ブラー
+- セル設定
+- ウィンドウ幅自動フィット処理
+- Electron main/preload の大規模変更
 
 ---
 
-# 1. ラベル文字サイズをもっと小さくできるようにする
+# 1. ウィンドウボタン3つに色を付ける
+
+## 目的
+
+現在のウィンドウボタン3つが視認しにくいため、macOS風に色を付けてください。
+
+## 期待仕様
+
+左上のウィンドウボタン3つを以下の色にしてください。
+
+| ボタン | 色 |
+|---|---|
+| 閉じる | 赤 |
+| 最小化 | 黄 |
+| 最大化/復元 | 緑 |
+
+## CSS例
+
+既存のクラス名に合わせてください。  
+候補クラス名:
+
+```text
+.windowControls
+.windowButton
+.windowClose
+.windowMinimize
+.windowMaximize
+````
+
+既存クラス名がない場合は追加してください。
+
+```css
+.windowControls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.windowButton {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  padding: 0;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.windowButton.close,
+.windowClose {
+  background: #ff5f57;
+}
+
+.windowButton.minimize,
+.windowMinimize {
+  background: #ffbd2e;
+}
+
+.windowButton.maximize,
+.windowMaximize {
+  background: #28c840;
+}
+
+.windowButton:hover {
+  filter: brightness(0.95);
+}
+```
+
+JSX側が必要なら以下のようにしてください。
+
+```jsx
+<div className="windowControls">
+  <button type="button" className="windowButton close" onClick={handleCloseWindow} />
+  <button type="button" className="windowButton minimize" onClick={handleMinimizeWindow} />
+  <button type="button" className="windowButton maximize" onClick={handleToggleMaximizeWindow} />
+</div>
+```
+
+既存のウィンドウ操作関数を使い、新しく重複定義しないでください。
+
+---
+
+# 2. 左サイドバー開閉ボタンをアプリ名の左へ移動する
 
 ## 現状
 
-セル設定に「ラベル文字サイズ」がありますが、最小値がまだ大きいです。
+左サイドバーの開閉ボタンが、タブのウィンドウボタンと重なりやすい位置にあります。
 
 ## 変更後仕様
 
-ラベル文字サイズの設定範囲を以下に変更してください。
+左サイドバーの開閉ボタンを、アプリ名 `GridDesk` の左側へ移動してください。
+ウィンドウボタン3つとは重ならないようにしてください。
 
-| 項目           |   現在 | 変更後 |
-| ------------ | ---: | --: |
-| ラベル文字サイズ min |  9程度 |   6 |
-| ラベル文字サイズ max | 18程度 |  18 |
-| step         |    1 |   1 |
-| 初期値          |   12 |  12 |
-
-## 修正対象
-
-設定画面の `labelFontSize` range input を確認し、`min="6"` にしてください。
-
-例:
-
-```jsx
-<input
-  type="range"
-  min="6"
-  max="18"
-  step="1"
-  value={settings.ui.cell.labelFontSize}
-  onChange={(event) =>
-    updateSettingsLocal((prev) => ({
-      ...prev,
-      ui: {
-        ...prev.ui,
-        cell: {
-          ...prev.ui.cell,
-          labelFontSize: Number(event.target.value)
-        }
-      }
-    }))
-  }
-/>
-```
-
-## 完了条件
-
-* ラベル文字サイズを 6px まで下げられる
-* 中央セルのファイル名ラベルに即時反映される
-* settings.json に保存される
-* 再起動後も維持される
-
----
-
-# 2. ラベル文字フォントを選択できるようにする
-
-## 追加仕様
-
-セル設定に「ラベルフォント」を追加してください。
-
-ユーザーが中央セルのファイル名ラベルに使うフォントを選択できるようにします。
-
-## settings.json 構造
-
-`ui.cell` に `labelFontFamily` を追加してください。
-
-```json
-{
-  "ui": {
-    "cell": {
-      "labelFontFamily": "system"
-    }
-  }
-}
-```
-
-## デフォルト設定
-
-`getDefaultSettings()` または既存のデフォルト設定に追加してください。
-
-```js
-cell: {
-  width: 92,
-  height: 92,
-  gap: 12,
-  iconSize: 32,
-  labelFontSize: 12,
-  labelFontFamily: "system",
-  showTypeBadge: true,
-  showFileName: true,
-  borderRadius: 12,
-  borderOpacity: 0.28
-}
-```
-
-既存の `ui.cell` 設定を壊さないでください。
-
----
-
-## normalizeSettings の更新
-
-既存 settings.json に `labelFontFamily` がない場合は、`system` で補完してください。
-
-```js
-cell: {
-  ...defaults.ui.cell,
-  ...(settings.ui?.cell ?? {})
-}
-```
-
-この補完の中で `labelFontFamily` が入るようにしてください。
-
----
-
-## フォント選択肢
-
-設定画面の「セル設定」に select を追加してください。
-
-選択肢はまず以下でお願いします。
+イメージ:
 
 ```text
-system
-sans
-serif
-mono
-rounded
+[● ● ●]   [‹] GridDesk   /path/to/workspace
 ```
 
-表示ラベルは日本語で構いません。
+サイドバー開閉ボタンは、上部タブ内の `GridDesk` の左に置く形で構いません。
 
-| value   | 表示名      | CSS                                                                         |
-| ------- | -------- | --------------------------------------------------------------------------- |
-| system  | システム     | system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif        |
-| sans    | ゴシック     | "Helvetica Neue", Arial, sans-serif                                         |
-| serif   | 明朝/Serif | Georgia, "Times New Roman", serif                                           |
-| mono    | 等幅       | "SFMono-Regular", Consolas, "Liberation Mono", monospace                    |
-| rounded | 丸ゴシック風   | ui-rounded, "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif |
+## JSX例
 
-## 設定UI例
+現在の上部ヘッダーを以下のような構造に整理してください。
 
 ```jsx
-<label>
-  ラベルフォント
-  <select
-    value={settings.ui.cell.labelFontFamily ?? "system"}
-    onChange={(event) =>
-      updateSettingsLocal((prev) => ({
-        ...prev,
-        ui: {
-          ...prev.ui,
-          cell: {
-            ...prev.ui.cell,
-            labelFontFamily: event.target.value
-          }
-        }
-      }))
-    }
-  >
-    <option value="system">システム</option>
-    <option value="sans">ゴシック</option>
-    <option value="serif">明朝/Serif</option>
-    <option value="mono">等幅</option>
-    <option value="rounded">丸ゴシック風</option>
-  </select>
-</label>
+<header className="appHeader">
+  <div className="windowControls">
+    ...
+  </div>
+
+  <div className="appHeaderLeft">
+    <button
+      type="button"
+      className="sidebarToggleInHeader"
+      onClick={toggleSidebarCollapsed}
+      aria-label={sidebarCollapsed ? "サイドバーを開く" : "サイドバーを閉じる"}
+    >
+      {sidebarCollapsed ? "›" : "‹"}
+    </button>
+
+    <span className="appHeaderTitle">GridDesk</span>
+
+    <span className="appHeaderPath">
+      {workspacePath || "No workspace open"}
+    </span>
+  </div>
+</header>
 ```
+
+既存の関数名に合わせてください。
+
+## サイドバー内の開閉ボタン削除
+
+開閉ボタンを上部ヘッダーへ移動した場合、左サイドバー内にある既存の開閉ボタンは削除してください。
+
+削除対象候補:
+
+```text
+sidebarCollapseButton
+sidebarHeader 内の開閉ボタン
+```
+
+ただし、上部ヘッダー側の `sidebarToggleInHeader` は残してください。
 
 ---
 
-## CSS変数へ反映
-
-`applyThemeVariables(settings)` に `--gd-label-font-family` を追加してください。
-
-```js
-function getLabelFontFamilyValue(fontFamily) {
-  if (fontFamily === "sans") {
-    return `"Helvetica Neue", Arial, sans-serif`;
-  }
-
-  if (fontFamily === "serif") {
-    return `Georgia, "Times New Roman", serif`;
-  }
-
-  if (fontFamily === "mono") {
-    return `"SFMono-Regular", Consolas, "Liberation Mono", monospace`;
-  }
-
-  if (fontFamily === "rounded") {
-    return `ui-rounded, "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif`;
-  }
-
-  return `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-}
-```
-
-```js
-root.style.setProperty(
-  "--gd-label-font-family",
-  getLabelFontFamilyValue(cell.labelFontFamily ?? "system")
-);
-```
-
----
-
-## ラベルCSSへ適用
-
-中央セルのファイル名ラベルに適用してください。
-
-既存クラス名に合わせてください。
-
-```css
-.iconLabel,
-.itemName,
-.launcherItemName {
-  font-size: var(--gd-label-font-size, 12px);
-  font-family: var(--gd-label-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-}
-```
-
-必要なら種別バッジにも同じフォントを適用して構いません。
-
-```css
-.cellTypeBadge {
-  font-family: var(--gd-label-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-}
-```
-
----
-
-# 3. セルサイズ変更後、ウィンドウ幅自動フィットが追従しない問題を修正
+# 3. 左サイドバーを閉じた時、左のベゼルをなくす
 
 ## 現状
 
-セル幅・セル高さを小さくした後、中央セルグリッドの表示サイズは小さくなるが、Electronウィンドウ幅の自動フィットが追従していません。
+左サイドバーを閉じた時にも、左側に細いベゼル/バーが残っています。
 
-特にセル幅を小さくした時に、アプリウィンドウ幅が以前の大きい幅のまま残ります。
+## 変更後仕様
 
-## 原因候補
+左サイドバーを閉じた時は、サイドバー領域を完全に消してください。
 
-以下の可能性があります。
+つまり、collapsed 時に `44px` などの幅を残さないでください。
 
-* 自動フィット処理の `useEffect` 依存配列に `settings.ui.cell.width` / `height` / `gap` が入っていない
-* ResizeObserver が `genreList` のサイズ変更を検知できていない
-* CSS変数変更だけでは `scrollWidth` の再計測タイミングが遅い
-* `requestFitWindowWidth()` がセル設定変更後に呼ばれていない
-* setWindowWidth に前回より小さい値を送っていない
+## CSS修正
 
----
+現在、以下のようになっている可能性があります。
 
-## 修正方針
-
-セル設定の以下が変更された時、必ずウィンドウ幅自動フィットを再計算してください。
-
-```text
-cell.width
-cell.height
-cell.gap
-cell.iconSize
-cell.labelFontSize
-cell.labelFontFamily
-showTypeBadge
-showFileName
-```
-
-特に重要なのは以下です。
-
-```text
-cell.width
-cell.gap
-showFileName
-labelFontSize
-labelFontFamily
-```
-
----
-
-## useEffect 依存配列の修正
-
-`requestFitWindowWidth()` を呼ぶ `useEffect` を確認し、セル設定を依存配列に追加してください。
-
-例:
-
-```jsx
-const cellSettings = settings?.ui?.cell ?? {};
-
-useEffect(() => {
-  if (settings?.ui?.autoFitWindowWidth === false) return;
-
-  const timer = window.setTimeout(() => {
-    requestFitWindowWidth();
-  }, 120);
-
-  return () => window.clearTimeout(timer);
-}, [
-  sidebarCollapsed,
-  categories,
-  items,
-  cellSettings.width,
-  cellSettings.height,
-  cellSettings.gap,
-  cellSettings.iconSize,
-  cellSettings.labelFontSize,
-  cellSettings.labelFontFamily,
-  cellSettings.showTypeBadge,
-  cellSettings.showFileName
-]);
-```
-
-既存の state 名が `genres`, `workspace`, `items` などの場合は実装に合わせてください。
-
----
-
-## requestFitWindowWidth の計測を見直す
-
-`genreListRef.current.scrollWidth` が古い値を返す場合があります。
-計測時は `getBoundingClientRect().width` と `scrollWidth` の両方を見て、必要に応じて小さい幅にも追従できるようにしてください。
-
-```jsx
-function requestFitWindowWidth() {
-  if (settings?.ui?.autoFitWindowWidth === false) return;
-
-  const sidebarWidth = sidebarRef.current?.getBoundingClientRect().width ?? 0;
-
-  const genreListEl = genreListRef.current;
-  if (!genreListEl) return;
-
-  const rectWidth = genreListEl.getBoundingClientRect().width;
-  const scrollWidth = genreListEl.scrollWidth;
-
-  const genreWidth = Math.max(rectWidth, scrollWidth);
-
-  const padding = 48;
-  const minWidth = 520;
-  const maxWidth = Math.min(window.screen.availWidth, 1800);
-
-  const nextWidth = Math.round(
-    Math.max(
-      minWidth,
-      Math.min(maxWidth, sidebarWidth + genreWidth + padding)
-    )
-  );
-
-  console.debug("GridDesk fit window width", {
-    sidebarWidth,
-    rectWidth,
-    scrollWidth,
-    genreWidth,
-    nextWidth
-  });
-
-  window.griddesk?.setWindowWidth?.(nextWidth);
+```css
+.sidebar.collapsed {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
 }
 ```
 
-ただし、`genreList` が `min-width: 100%` のままだと小さくなりません。CSSも必ず確認してください。
-
----
-
-## CSSの確認
-
-以下のように、中央の中身が画面幅に引き伸ばされないようにしてください。
+これを以下のように変更してください。
 
 ```css
-.genreList {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 18px;
-  width: max-content;
+.sidebar.collapsed {
+  width: 0;
   min-width: 0;
-}
-
-.genreCard {
-  width: max-content;
-  min-width: unset;
-  max-width: none;
-  align-self: flex-start;
-}
-
-.cellGrid {
-  display: grid;
-  width: max-content;
+  max-width: 0;
+  padding: 0;
+  border-right: 0;
+  overflow: hidden;
 }
 ```
 
-以下が残っている場合は削除または修正してください。
+通常時はこれまで通り表示してください。
 
 ```css
-.genreList {
-  min-width: 100%;
-}
-
-.genreCard {
-  width: 100%;
+.sidebar {
+  width: 320px;
+  min-width: 280px;
+  max-width: 380px;
 }
 ```
 
+重要:
+
+* collapsed時に `sidebarScroll` は表示しない
+* collapsed時に開閉ボタンをサイドバー内に残さない
+* 開閉操作は上部ヘッダーの `sidebarToggleInHeader` で行う
+* collapsed時に左ベゼルが残らないこと
+
 ---
 
-## CSS変数変更後に次フレームで再計測する
+# 4. UI上部タブの高さをギリギリまで詰める
 
-CSS変数の反映直後はレイアウト値が更新前の場合があります。
-`requestAnimationFrame` を使って再計測してください。
+## 現状
 
-```jsx
-function scheduleFitWindowWidth() {
-  if (settings?.ui?.autoFitWindowWidth === false) return;
+上部タブ/ヘッダーの高さがやや大きく、ベゼルが太いです。
 
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-      requestFitWindowWidth();
-    });
-  });
+## 変更後仕様
+
+上部タブの高さをできるだけ細くしてください。
+ただし、以下は維持してください。
+
+* ウィンドウボタン3つが押せる
+* サイドバー開閉ボタンが押せる
+* `GridDesk` と参照パスが読める
+* macOS風ウィンドウボタンとテキストが重ならない
+* ヘッダー余白部分をドラッグしてウィンドウ移動できる
+
+## CSS例
+
+```css
+.appHeader {
+  height: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 10px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--gd-border-subtle);
+  background: rgba(246, 247, 244, var(--gd-panel-opacity, 0.85));
+  backdrop-filter: var(--gd-backdrop-blur, none);
+  -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
+  -webkit-app-region: drag;
+}
+
+.appHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  -webkit-app-region: drag;
+}
+
+.sidebarToggleInHeader {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--gd-border-subtle);
+  border-radius: 7px;
+  padding: 0;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.18);
+  -webkit-app-region: no-drag;
+}
+
+.appHeaderTitle {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.appHeaderPath {
+  min-width: 0;
+  font-size: 11px;
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 ```
 
-useEffect からは `scheduleFitWindowWidth()` を呼んでください。
+もし 32px が厳しければ 34px まで上げても構いません。
+ただし、現在より明確に細くしてください。
 
-```jsx
-useEffect(() => {
-  scheduleFitWindowWidth();
-}, [
-  sidebarCollapsed,
-  categories,
-  items,
-  cellSettings.width,
-  cellSettings.height,
-  cellSettings.gap,
-  cellSettings.iconSize,
-  cellSettings.labelFontSize,
-  cellSettings.labelFontFamily,
-  cellSettings.showTypeBadge,
-  cellSettings.showFileName
-]);
+---
+
+# 5. ドラッグ領域とボタン操作の確認
+
+上部ヘッダーはドラッグ可能にし、ボタン類は no-drag にしてください。
+
+```css
+.appHeader {
+  -webkit-app-region: drag;
+}
+
+.windowControls,
+.windowControls button,
+.sidebarToggleInHeader {
+  -webkit-app-region: no-drag;
+}
 ```
 
----
-
-## ResizeObserver も維持
-
-既存の ResizeObserver がある場合は維持してください。
-ただし、ResizeObserver だけに頼らず、セル設定変更時にも明示的に再計測してください。
-
-```jsx
-useEffect(() => {
-  if (!genreListRef.current) return;
-
-  const observer = new ResizeObserver(() => {
-    scheduleFitWindowWidth();
-  });
-
-  observer.observe(genreListRef.current);
-
-  return () => observer.disconnect();
-}, []);
-```
+`GridDesk` やパス表示部分はドラッグ領域のままで構いません。
 
 ---
 
-# 4. 完了条件
+# 完了条件
 
-## ラベル文字サイズ
+## ウィンドウボタン
 
-* ラベル文字サイズを 6px まで小さくできる
-* 中央セルの表示に即時反映される
-* settings.json に保存される
-* 再起動後も維持される
+* 3つのウィンドウボタンに赤・黄・緑の色が付いている
+* クリック操作はこれまで通り動く
+* ボタンはドラッグ領域扱いになっていない
 
-## ラベルフォント
+## サイドバー開閉ボタン
 
-* セル設定に「ラベルフォント」が表示される
-* システム / ゴシック / 明朝 / 等幅 / 丸ゴシック風 を選べる
-* 中央セルのファイル名ラベルに即時反映される
-* settings.json に保存される
-* 再起動後も維持される
+* 開閉ボタンが `GridDesk` の左に表示される
+* ウィンドウボタン3つと重ならない
+* サイドバー開閉はこれまで通り動く
+* サイドバー内の古い開閉ボタンは消えている
 
-## ウィンドウ幅自動フィット
+## サイドバー折りたたみ
 
-* セル幅を小さくすると、ウィンドウ幅も小さく再調整される
-* セル幅を大きくすると、必要に応じてウィンドウ幅も広がる
-* セル間隔を小さくすると、ウィンドウ幅も再調整される
-* ファイル名表示OFF時にも、必要幅が再計算される
-* ラベル文字サイズ変更後も、必要幅が再計算される
-* サイドバー折りたたみ/展開後も再計算される
-* 高さは変更されない
+* サイドバーを閉じた時に左ベゼルが残らない
+* collapsed 時のサイドバー幅が 0 になる
+* 中央セル領域が左端まで寄る
+
+## 上部タブ
+
+* 上部タブの高さが以前より細くなっている
+* `GridDesk` と参照パスは横並びで見える
+* ヘッダー余白部分をドラッグしてウィンドウ移動できる
+* ウィンドウボタン、サイドバー開閉ボタンはクリックできる
 
 ---
 
-# 5. 作業後の報告形式
+# 作業後の報告形式
 
 ```text
 対応結果:
 
-ラベル文字サイズ拡張:
-- min 6px 対応: OK / NG
-- 即時反映: OK / NG
-- settings.json 保存/復元: OK / NG
+1. ウィンドウボタン色付け
+- 赤/黄/緑の表示: OK / NG
+- クリック動作維持: OK / NG
 
-ラベルフォント選択:
-- labelFontFamily デフォルト追加: OK / NG
-- normalizeSettings 補完: OK / NG
-- 設定UI追加: OK / NG
-- CSS変数反映: OK / NG
-- 中央セルラベル反映: OK / NG
-- settings.json 保存/復元: OK / NG
+2. サイドバー開閉ボタン移動
+- GridDesk 左側へ移動: OK / NG
+- ウィンドウボタン非重複: OK / NG
+- 旧サイドバー内ボタン削除: OK / NG
 
-ウィンドウ幅自動フィット修正:
-- セル設定を useEffect 依存配列に追加: OK / NG
-- CSS変数変更後の再計測: OK / NG
-- requestAnimationFrame による再計測: OK / NG
-- ResizeObserver 維持: OK / NG
-- セル幅縮小後のウィンドウ幅縮小確認: OK / NG
-- セル幅拡大後のウィンドウ幅拡大確認: OK / NG
+3. サイドバー閉時の左ベゼル削除
+- collapsed width 0: OK / NG
+- 左ベゼルなし: OK / NG
+- 中央セル領域が左へ寄る: OK / NG
+
+4. 上部タブ高さ調整
+- appHeader 高さ縮小: OK / NG
+- GridDesk/path 横並び維持: OK / NG
+- ドラッグ移動維持: OK / NG
 
 変更ファイル:
 - src/App.jsx:
 - src/styles.css:
-- electron/main.cjs:
 - その他:
 
 確認:
@@ -548,4 +397,10 @@ useEffect(() => {
 - node --check electron/main.cjs:
 - node --check electron/preload.cjs:
 - npm start:
+```
+
+ビルド成功だけで完了扱いにしないでください。
+必ず実画面で、サイドバーを閉じた時に左ベゼルが残らないこと、上部タブが細くなっていることを確認してください。
+
+```
 ```

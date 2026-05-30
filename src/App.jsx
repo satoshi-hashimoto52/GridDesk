@@ -413,15 +413,21 @@ function App() {
     const scrollWidth = genreListEl.scrollWidth;
     const genreWidth = Math.max(rectWidth, scrollWidth);
     if (!genreWidth) return;
-    const padding = 48;
-    const minWidth = 520;
+    const outerPadding = 36;
+    const collapsedMinWidth = 360;
+    const expandedMinWidth = 520;
+    const sidebarCollapsed = settings?.ui?.sidebarCollapsed === true;
+    const minWidth = sidebarCollapsed ? collapsedMinWidth : expandedMinWidth;
     const maxWidth = Math.min(window.screen?.availWidth || 1800, 1800);
-    const nextWidth = Math.round(Math.max(minWidth, Math.min(maxWidth, sidebarWidth + genreWidth + padding)));
+    const nextWidth = Math.round(Math.max(minWidth, Math.min(maxWidth, sidebarWidth + genreWidth + outerPadding)));
     console.debug("GridDesk fit window width", {
+      sidebarCollapsed,
       sidebarWidth,
       rectWidth,
       scrollWidth,
       genreWidth,
+      outerPadding,
+      minWidth,
       nextWidth
     });
     api.setWindowWidth?.(nextWidth)?.catch?.(() => {});

@@ -207,6 +207,7 @@ label {
 .appHeader {
   height: 42px;
   min-height: 42px;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -734,7 +735,7 @@ label {
 .genreBlock,
 .genreCard {
   width: max-content;
-  min-width: unset;
+  min-width: 0;
   max-width: none;
   align-self: flex-start;
   background: rgba(255, 255, 255, var(--gd-panel-opacity, 0.9)) !important;
@@ -784,6 +785,7 @@ label {
 .cellGrid {
   display: grid;
   width: max-content;
+  min-width: 0;
   gap: var(--gd-cell-gap, 12px);
   align-items: start;
 }

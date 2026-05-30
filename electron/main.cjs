@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require("electron");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -398,8 +398,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 520,
-    minHeight: 600,
+    minWidth: 360,
+    minHeight: 420,
     title: "GridDesk",
     backgroundColor: "#00000000",
     transparent: true,
@@ -434,7 +434,14 @@ ipcMain.handle("window:setWidth", async (event, width) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
   if (!browserWindow) return { ok: false, error: "BrowserWindow not found" };
   const bounds = browserWindow.getBounds();
-  const safeWidth = Math.max(520, Math.min(Number(width) || bounds.width, 1800));
+  const minAutoFitWidth = 360;
+  const maxAutoFitWidth = Math.min(1800, screen.getPrimaryDisplay().workAreaSize.width);
+  const safeWidth = Math.max(minAutoFitWidth, Math.min(Number(width) || bounds.width, maxAutoFitWidth));
+  console.log("GridDesk window:setWidth", {
+    requested: width,
+    applied: safeWidth,
+    currentBounds: bounds
+  });
   browserWindow.setBounds({ ...bounds, width: safeWidth });
   return { ok: true, width: safeWidth };
 });
