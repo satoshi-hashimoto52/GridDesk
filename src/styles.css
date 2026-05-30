@@ -16,6 +16,7 @@
   --gd-cell-gap: 12px;
   --gd-icon-size: 32px;
   --gd-label-font-size: 12px;
+  --gd-label-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --gd-cell-radius: 12px;
   --gd-cell-border-opacity: 0.28;
   --gd-border-subtle: rgba(255, 255, 255, 0.28);
@@ -864,6 +865,7 @@ label {
   overflow-wrap: anywhere;
   text-align: center;
   font-size: var(--gd-label-font-size, 12px);
+  font-family: var(--gd-label-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   line-height: 1.18;
 }
 
@@ -878,6 +880,7 @@ label {
   display: block;
   color: rgba(20, 30, 30, 0.65);
   font-size: 10px;
+  font-family: var(--gd-label-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   line-height: 1;
   opacity: 0.75;
   pointer-events: none;

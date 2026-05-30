@@ -39,6 +39,7 @@ const defaultSettings = {
       gap: 12,
       iconSize: 32,
       labelFontSize: 12,
+      labelFontFamily: "system",
       showTypeBadge: true,
       showFileName: true,
       borderRadius: 12,

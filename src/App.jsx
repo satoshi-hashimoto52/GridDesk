@@ -63,6 +63,7 @@ const defaultSettings = {
       gap: 12,
       iconSize: 32,
       labelFontSize: 12,
+      labelFontFamily: "system",
       showTypeBadge: true,
       showFileName: true,
       borderRadius: 12,
@@ -96,9 +97,17 @@ const cellRangeFields = [
   ["height", "セル高さ", 64, 160, 1, ""],
   ["gap", "セル間隔", 4, 32, 1, ""],
   ["iconSize", "アイコンサイズ", 20, 72, 1, ""],
-  ["labelFontSize", "ラベル文字サイズ", 9, 18, 1, ""],
+  ["labelFontSize", "ラベル文字サイズ", 6, 18, 1, ""],
   ["borderRadius", "セル角丸", 0, 28, 1, ""],
   ["borderOpacity", "セル枠線の濃さ", 0, 1, 0.01, "fixed2"]
+];
+
+const labelFontOptions = [
+  ["system", "システム"],
+  ["sans", "ゴシック"],
+  ["serif", "明朝/Serif"],
+  ["mono", "等幅"],
+  ["rounded", "丸ゴシック風"]
 ];
 
 function isPlainObject(value) {
@@ -164,6 +173,14 @@ function getIconTypeSetting(type, settings) {
   return iconTypes[type] || iconTypes.default || defaultIconTypes.default;
 }
 
+function getLabelFontFamilyValue(fontFamily) {
+  if (fontFamily === "sans") return `"Helvetica Neue", Arial, sans-serif`;
+  if (fontFamily === "serif") return `Georgia, "Times New Roman", serif`;
+  if (fontFamily === "mono") return `"SFMono-Regular", Consolas, "Liberation Mono", monospace`;
+  if (fontFamily === "rounded") return `ui-rounded, "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif`;
+  return `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+}
+
 function applyThemeVariables(settings) {
   const ui = settings?.ui || {};
   const opacity = ui.opacity || {};
@@ -187,6 +204,7 @@ function applyThemeVariables(settings) {
   root.style.setProperty("--gd-cell-gap", `${cell.gap ?? 12}px`);
   root.style.setProperty("--gd-icon-size", `${cell.iconSize ?? 32}px`);
   root.style.setProperty("--gd-label-font-size", `${cell.labelFontSize ?? 12}px`);
+  root.style.setProperty("--gd-label-font-family", getLabelFontFamilyValue(cell.labelFontFamily ?? "system"));
   root.style.setProperty("--gd-cell-radius", `${cell.borderRadius ?? 12}px`);
   root.style.setProperty("--gd-cell-border-opacity", String(cell.borderOpacity ?? 0.28));
 }
@@ -279,6 +297,7 @@ function App() {
   const [genreDraft, setGenreDraft] = useState({ name: "", cols: 6, rows: 3, accentColor: "#2f7d68", memo: "" });
   const [editGenreId, setEditGenreId] = useState("");
   const [itemForm, setItemForm] = useState(emptyForm());
+  const cellSettings = settings?.ui?.cell || defaultSettings.ui.cell;
 
   useEffect(() => {
     api.getState().then(setAppState).catch(showError);
@@ -334,9 +353,14 @@ function App() {
     workspace,
     settings.ui.sidebarCollapsed,
     settings.ui.autoFitWindowWidth,
-    settings.ui.cell?.width,
-    settings.ui.cell?.height,
-    settings.ui.cell?.gap
+    cellSettings.width,
+    cellSettings.height,
+    cellSettings.gap,
+    cellSettings.iconSize,
+    cellSettings.labelFontSize,
+    cellSettings.labelFontFamily,
+    cellSettings.showTypeBadge,
+    cellSettings.showFileName
   ]);
 
   useEffect(() => {
@@ -383,18 +407,34 @@ function App() {
   function requestFitWindowWidth() {
     if (settings?.ui?.autoFitWindowWidth === false || !workspace) return;
     const sidebarWidth = sidebarRef.current?.getBoundingClientRect().width ?? 0;
-    const genreWidth = genreListRef.current?.scrollWidth ?? 0;
+    const genreListEl = genreListRef.current;
+    if (!genreListEl) return;
+    const rectWidth = genreListEl.getBoundingClientRect().width;
+    const scrollWidth = genreListEl.scrollWidth;
+    const genreWidth = Math.max(rectWidth, scrollWidth);
     if (!genreWidth) return;
     const padding = 48;
     const minWidth = 520;
     const maxWidth = Math.min(window.screen?.availWidth || 1800, 1800);
     const nextWidth = Math.round(Math.max(minWidth, Math.min(maxWidth, sidebarWidth + genreWidth + padding)));
+    console.debug("GridDesk fit window width", {
+      sidebarWidth,
+      rectWidth,
+      scrollWidth,
+      genreWidth,
+      nextWidth
+    });
     api.setWindowWidth?.(nextWidth)?.catch?.(() => {});
   }
 
   function scheduleFitWindowWidth() {
+    if (settings?.ui?.autoFitWindowWidth === false) return;
     if (fitWindowTimer.current) clearTimeout(fitWindowTimer.current);
-    fitWindowTimer.current = window.setTimeout(requestFitWindowWidth, 80);
+    fitWindowTimer.current = window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(requestFitWindowWidth);
+      });
+    }, 80);
   }
 
   function adoptWorkspace(data) {
@@ -1473,6 +1513,17 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
                 <output>{format === "fixed2" ? Number(current.ui.cell[key]).toFixed(2) : current.ui.cell[key]}</output>
               </label>
             ))}
+            <label>
+              ラベルフォント
+              <select
+                value={current.ui.cell.labelFontFamily ?? "system"}
+                onChange={(event) => updateCell("labelFontFamily", event.target.value)}
+              >
+                {labelFontOptions.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
             <label className="check settingCheck">
               <input
                 type="checkbox"
