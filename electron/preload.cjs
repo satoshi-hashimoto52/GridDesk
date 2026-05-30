@@ -1,0 +1,30 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+contextBridge.exposeInMainWorld("gridDesk", {
+  getState: () => ipcRenderer.invoke("app:getState"),
+  createWorkspace: () => ipcRenderer.invoke("workspace:create"),
+  openWorkspace: () => ipcRenderer.invoke("workspace:open"),
+  openWorkspacePath: (workspacePath) => ipcRenderer.invoke("workspace:openPath", workspacePath),
+  revealWorkspace: (workspacePath) => ipcRenderer.invoke("workspace:reveal", workspacePath),
+  setWindowWidth: (width) => ipcRenderer.invoke("window:setWidth", width),
+  backupWorkspace: (workspacePath) => ipcRenderer.invoke("workspace:backup", workspacePath),
+  getSettings: (workspacePath) => ipcRenderer.invoke("settings:get", workspacePath),
+  saveSettings: (workspacePath, settings) => ipcRenderer.invoke("settings:save", workspacePath, settings),
+  updateSettings: (workspacePath, partialSettings) => ipcRenderer.invoke("settings:update", workspacePath, partialSettings),
+  selectTarget: () => ipcRenderer.invoke("dialog:selectTarget"),
+  readClipboardText: () => ipcRenderer.invoke("clipboard:readText"),
+  createGenre: (workspacePath, input) => ipcRenderer.invoke("genre:create", workspacePath, input),
+  updateGenre: (workspacePath, input) => ipcRenderer.invoke("genre:update", workspacePath, input),
+  deleteGenre: (workspacePath, genreId) => ipcRenderer.invoke("genre:delete", workspacePath, genreId),
+  saveItem: (workspacePath, input) => ipcRenderer.invoke("item:save", workspacePath, input),
+  updateItem: (workspacePath, input) => ipcRenderer.invoke("item:update", workspacePath, input),
+  moveItem: (workspacePath, input) => ipcRenderer.invoke("item:move", workspacePath, input),
+  deleteItem: (workspacePath, itemId) => ipcRenderer.invoke("item:delete", workspacePath, itemId),
+  disableCell: (workspacePath, input) => ipcRenderer.invoke("cell:disable", workspacePath, input),
+  restoreCell: (workspacePath, input) => ipcRenderer.invoke("cell:restore", workspacePath, input),
+  restoreAllCells: (workspacePath) => ipcRenderer.invoke("cell:restoreAll", workspacePath),
+  openPath: (targetPath) => ipcRenderer.invoke("path:open", targetPath),
+  revealPath: (targetPath) => ipcRenderer.invoke("path:reveal", targetPath),
+  openTarget: (workspacePath, item) => ipcRenderer.invoke("target:open", workspacePath, item),
+  revealTarget: (workspacePath, item) => ipcRenderer.invoke("target:reveal", workspacePath, item)
+});
