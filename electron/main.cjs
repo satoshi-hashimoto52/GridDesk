@@ -20,6 +20,12 @@ const defaultSettings = {
       cellRegister: true,
       settings: true
     },
+    categoryManageSections: {
+      add: true,
+      edit: true,
+      grid: true,
+      color: true
+    },
     opacity: {
       appBackground: 0.25,
       sidebar: 0.85,
@@ -45,6 +51,9 @@ const defaultSettings = {
       borderRadius: 12,
       borderOpacity: 0.28
     }
+  },
+  system: {
+    openAtLogin: false
   },
   iconTypes: {
     folder: { label: "フォルダ", icon: "folder", strokeColor: "#f5c542", backgroundColor: "#20242a", backgroundOpacity: 0.9 },
@@ -114,6 +123,14 @@ function normalizeSettings(rawSettings) {
       opacity: {
         ...defaultSettings.ui.opacity,
         ...(merged.ui?.opacity || {})
+      },
+      sidebarSections: {
+        ...defaultSettings.ui.sidebarSections,
+        ...(merged.ui?.sidebarSections || {})
+      },
+      categoryManageSections: {
+        ...defaultSettings.ui.categoryManageSections,
+        ...(merged.ui?.categoryManageSections || {})
       },
       blur: {
         ...defaultSettings.ui.blur,
@@ -445,6 +462,21 @@ ipcMain.handle("window:toggleMaximize", (event) => {
     browserWindow.unmaximize();
   } else {
     browserWindow.maximize();
+  }
+});
+
+ipcMain.handle("system:getOpenAtLogin", async () => {
+  const loginSettings = app.getLoginItemSettings();
+  return { ok: true, openAtLogin: Boolean(loginSettings.openAtLogin) };
+});
+
+ipcMain.handle("system:setOpenAtLogin", async (_event, enabled) => {
+  try {
+    app.setLoginItemSettings({ openAtLogin: Boolean(enabled) });
+    const loginSettings = app.getLoginItemSettings();
+    return { ok: true, openAtLogin: Boolean(loginSettings.openAtLogin) };
+  } catch (error) {
+    return { ok: false, error: String(error?.message ?? error) };
   }
 });
 

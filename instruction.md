@@ -1,10 +1,12 @@
-# GridDesk 修正指示：ウィンドウボタン・サイドバー開閉ボタン・上部タブ高さ調整
+# GridDesk 修正指示：ウィンドウボタン・自動起動・削除済みセル復活削除・カテゴリ色・カテゴリ項目折りたたみ
 
-今回は以下の3点だけ修正してください。
+今回は以下の5点だけ対応してください。
 
-1. ウィンドウボタン3つに色を付ける
-2. 左サイドバー開閉ボタンをアプリ名の左へ移動し、macOS風ウィンドウボタンと重ならないようにする
-3. UI上部タブの高さをできるだけ詰めて、ベゼルを細くする
+1. ウィンドウボタンの色と実際のボタン位置がずれている問題を修正する
+2. 設定に「PC起動時に自動起動する」ON/OFFを追加する。デフォルトOFF
+3. 設定内の「削除済みセル復活」ボタンと機能を削除する
+4. 左サイドバーのカテゴリ管理で、カテゴリごとのタブ色を変更できるようにする
+5. 左サイドバーのカテゴリ管理で、カテゴリごとの項目を個別に折りたためるようにする
 
 ## 禁止事項
 
@@ -14,44 +16,62 @@
 - 右クリックメニュー
 - 削除モード
 - セル登録ロジック
-- DBスキーマ
+- ドラッグ移動
 - 背景透過/ブラー
 - セル設定
-- ウィンドウ幅自動フィット処理
-- Electron main/preload の大規模変更
+- ウィンドウ幅自動フィット
+- DBスキーマの不要な変更
 
 ---
 
-# 1. ウィンドウボタン3つに色を付ける
+# 1. ウィンドウボタンの色と実際のボタン位置のずれ修正
 
-## 目的
+## 症状
 
-現在のウィンドウボタン3つが視認しにくいため、macOS風に色を付けてください。
+ウィンドウボタン3つに色は付いていますが、色付きの丸と実際にクリックできるボタン位置がずれています。
+
+## 原因候補
+
+- button本体とは別の疑似要素に色を付けている
+- buttonの中のspanだけに色が付いている
+- absolute配置の色丸とbutton位置がずれている
+- padding/marginによりクリック領域と表示位置が一致していない
 
 ## 期待仕様
 
-左上のウィンドウボタン3つを以下の色にしてください。
+赤・黄・緑の丸そのものがクリック可能領域になること。  
+見えている丸と実際のボタン領域が完全に一致すること。
 
-| ボタン | 色 |
-|---|---|
-| 閉じる | 赤 |
-| 最小化 | 黄 |
-| 最大化/復元 | 緑 |
+## 実装方針
 
-## CSS例
+ウィンドウボタンは、別要素や疑似要素ではなく、`button` 自体に色を付けてください。
 
-既存のクラス名に合わせてください。  
-候補クラス名:
+### JSX例
 
-```text
-.windowControls
-.windowButton
-.windowClose
-.windowMinimize
-.windowMaximize
+```jsx
+<div className="windowControls">
+  <button
+    type="button"
+    className="windowButton windowClose"
+    aria-label="閉じる"
+    onClick={handleCloseWindow}
+  />
+  <button
+    type="button"
+    className="windowButton windowMinimize"
+    aria-label="最小化"
+    onClick={handleMinimizeWindow}
+  />
+  <button
+    type="button"
+    className="windowButton windowMaximize"
+    aria-label="最大化"
+    onClick={handleToggleMaximizeWindow}
+  />
+</div>
 ```
 
-既存クラス名がない場合は追加してください。
+### CSS
 
 ```css
 .windowControls {
@@ -65,297 +85,531 @@
 .windowButton {
   width: 12px;
   height: 12px;
+  min-width: 12px;
+  min-height: 12px;
+  max-width: 12px;
+  max-height: 12px;
+  padding: 0;
+  margin: 0;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.16);
-  padding: 0;
   cursor: pointer;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background-clip: padding-box;
   -webkit-app-region: no-drag;
 }
 
-.windowButton.close,
-.windowClose {
+.windowButton.windowClose {
   background: #ff5f57;
 }
 
-.windowButton.minimize,
-.windowMinimize {
+.windowButton.windowMinimize {
   background: #ffbd2e;
 }
 
-.windowButton.maximize,
-.windowMaximize {
+.windowButton.windowMaximize {
   background: #28c840;
 }
 
 .windowButton:hover {
-  filter: brightness(0.95);
+  filter: brightness(0.94);
 }
 ```
 
-JSX側が必要なら以下のようにしてください。
+## 注意
 
-```jsx
-<div className="windowControls">
-  <button type="button" className="windowButton close" onClick={handleCloseWindow} />
-  <button type="button" className="windowButton minimize" onClick={handleMinimizeWindow} />
-  <button type="button" className="windowButton maximize" onClick={handleToggleMaximizeWindow} />
-</div>
+以下のような実装は避けてください。
+
+```css
+.windowButton::before {
+  background: red;
+}
 ```
 
-既存のウィンドウ操作関数を使い、新しく重複定義しないでください。
+疑似要素ではなく、button自体に背景色を付けてください。
+
+## 完了条件
+
+* 赤丸そのものをクリックすると閉じる
+* 黄丸そのものをクリックすると最小化
+* 緑丸そのものをクリックすると最大化/復元
+* 見えている丸とクリック可能領域がずれていない
 
 ---
 
-# 2. 左サイドバー開閉ボタンをアプリ名の左へ移動する
+# 2. PC起動時に自動起動する設定を追加
 
-## 現状
+## 目的
 
-左サイドバーの開閉ボタンが、タブのウィンドウボタンと重なりやすい位置にあります。
+設定画面に「PC起動時に自動起動する」ON/OFFを追加してください。
+デフォルトはOFFです。
 
-## 変更後仕様
+## 設定保存
 
-左サイドバーの開閉ボタンを、アプリ名 `GridDesk` の左側へ移動してください。
-ウィンドウボタン3つとは重ならないようにしてください。
+`settings.json` に以下を追加してください。
 
-イメージ:
-
-```text
-[● ● ●]   [‹] GridDesk   /path/to/workspace
+```json
+{
+  "system": {
+    "openAtLogin": false
+  }
+}
 ```
 
-サイドバー開閉ボタンは、上部タブ内の `GridDesk` の左に置く形で構いません。
+既存の設定構造に合わせても構いませんが、ユーザー設定として保存してください。
 
-## JSX例
+## デフォルト設定
 
-現在の上部ヘッダーを以下のような構造に整理してください。
+`getDefaultSettings()` または既存のデフォルト設定に追加してください。
 
-```jsx
-<header className="appHeader">
-  <div className="windowControls">
-    ...
-  </div>
-
-  <div className="appHeaderLeft">
-    <button
-      type="button"
-      className="sidebarToggleInHeader"
-      onClick={toggleSidebarCollapsed}
-      aria-label={sidebarCollapsed ? "サイドバーを開く" : "サイドバーを閉じる"}
-    >
-      {sidebarCollapsed ? "›" : "‹"}
-    </button>
-
-    <span className="appHeaderTitle">GridDesk</span>
-
-    <span className="appHeaderPath">
-      {workspacePath || "No workspace open"}
-    </span>
-  </div>
-</header>
+```js
+system: {
+  openAtLogin: false
+}
 ```
 
-既存の関数名に合わせてください。
-
-## サイドバー内の開閉ボタン削除
-
-開閉ボタンを上部ヘッダーへ移動した場合、左サイドバー内にある既存の開閉ボタンは削除してください。
-
-削除対象候補:
-
-```text
-sidebarCollapseButton
-sidebarHeader 内の開閉ボタン
-```
-
-ただし、上部ヘッダー側の `sidebarToggleInHeader` は残してください。
+既存 settings.json に `system.openAtLogin` がない場合は `false` で補完してください。
 
 ---
 
-# 3. 左サイドバーを閉じた時、左のベゼルをなくす
+## Electron main 側
 
-## 現状
+Electron の `app.setLoginItemSettings()` / `app.getLoginItemSettings()` を使ってください。
 
-左サイドバーを閉じた時にも、左側に細いベゼル/バーが残っています。
+`electron/main.cjs` に IPC を追加してください。
 
-## 変更後仕様
+```js
+const { app, ipcMain } = require("electron");
 
-左サイドバーを閉じた時は、サイドバー領域を完全に消してください。
+ipcMain.handle("system:getOpenAtLogin", async () => {
+  const settings = app.getLoginItemSettings();
+  return {
+    ok: true,
+    openAtLogin: Boolean(settings.openAtLogin)
+  };
+});
 
-つまり、collapsed 時に `44px` などの幅を残さないでください。
+ipcMain.handle("system:setOpenAtLogin", async (_event, enabled) => {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: Boolean(enabled)
+    });
 
-## CSS修正
+    const settings = app.getLoginItemSettings();
 
-現在、以下のようになっている可能性があります。
-
-```css
-.sidebar.collapsed {
-  width: 44px;
-  min-width: 44px;
-  max-width: 44px;
-}
+    return {
+      ok: true,
+      openAtLogin: Boolean(settings.openAtLogin)
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message ?? error)
+    };
+  }
+});
 ```
 
-これを以下のように変更してください。
+macOS / Windows での動作差はありますが、まずは Electron 標準APIで実装してください。
 
-```css
-.sidebar.collapsed {
-  width: 0;
-  min-width: 0;
-  max-width: 0;
-  padding: 0;
-  border-right: 0;
-  overflow: hidden;
-}
+---
+
+## preload
+
+`electron/preload.cjs` の `window.griddesk` に追加してください。
+
+```js
+getOpenAtLogin: () => ipcRenderer.invoke("system:getOpenAtLogin"),
+setOpenAtLogin: (enabled) => ipcRenderer.invoke("system:setOpenAtLogin", enabled)
 ```
 
-通常時はこれまで通り表示してください。
+既存APIを消さないでください。
 
-```css
-.sidebar {
-  width: 320px;
-  min-width: 280px;
-  max-width: 380px;
-}
+---
+
+## Renderer設定画面
+
+設定画面に以下の項目を追加してください。
+
+```jsx
+<label className="settingsCheckRow">
+  <input
+    type="checkbox"
+    checked={settings?.system?.openAtLogin ?? false}
+    onChange={async (event) => {
+      const enabled = event.target.checked;
+
+      updateSettingsLocal((prev) => ({
+        ...prev,
+        system: {
+          ...(prev.system ?? {}),
+          openAtLogin: enabled
+        }
+      }));
+
+      const result = await window.griddesk?.setOpenAtLogin?.(enabled);
+
+      if (result?.ok === false) {
+        alert(result.error || "自動起動設定の変更に失敗しました");
+      }
+    }}
+  />
+  <span>PC起動時に自動起動する</span>
+</label>
 ```
+
+起動時または設定画面表示時に、可能なら実OS側の状態も確認してください。
+
+```jsx
+useEffect(() => {
+  window.griddesk?.getOpenAtLogin?.().then((result) => {
+    if (!result?.ok) return;
+
+    updateSettingsLocal((prev) => ({
+      ...prev,
+      system: {
+        ...(prev.system ?? {}),
+        openAtLogin: result.openAtLogin
+      }
+    }));
+  });
+}, []);
+```
+
+ただし、settings保存と競合しないよう注意してください。
+
+## 完了条件
+
+* 設定画面に「PC起動時に自動起動する」が表示される
+* 初期値はOFF
+* ON/OFF変更が settings.json に保存される
+* Electron の `app.setLoginItemSettings()` が呼ばれる
+* 再起動後も設定表示が維持される
+
+---
+
+# 3. 設定の「削除済みセル復活」ボタンと機能を削除
+
+## 目的
+
+設定内にある「削除済みセル復活」ボタンと機能を削除してください。
+
+## 削除対象
+
+設定画面内の以下に相当するUIを削除してください。
+
+```text
+削除済みセルを復活
+削除済みセルを全て復活
+Restore deleted cells
+restore disabled cells
+```
+
+## 関数削除または未使用化
+
+以下のような関数が設定画面専用で使われている場合は削除してください。
+
+```text
+restoreAllDeletedCells
+restoreDisabledCells
+clearDisabledCells
+handleRestoreCells
+```
+
+ただし、**登録時・移動時に削除済みセルを自動復活させる内部機能は残してください。**
 
 重要:
 
-* collapsed時に `sidebarScroll` は表示しない
-* collapsed時に開閉ボタンをサイドバー内に残さない
-* 開閉操作は上部ヘッダーの `sidebarToggleInHeader` で行う
-* collapsed時に左ベゼルが残らないこと
+* 設定画面の手動復活ボタンだけ削除
+* 登録/移動時の自動復活は削除しない
+* disabled_cells テーブルや自動復活IPCを削除しない
+
+## 完了条件
+
+* 設定画面から削除済みセル復活ボタンが消えている
+* 登録/移動時の削除済みセル自動復活は維持されている
 
 ---
 
-# 4. UI上部タブの高さをギリギリまで詰める
+# 4. カテゴリごとのタブ色を変更できるようにする
 
-## 現状
+## 目的
 
-上部タブ/ヘッダーの高さがやや大きく、ベゼルが太いです。
+左サイドバーのカテゴリ管理で、カテゴリごとのタブ色を変更できるようにしてください。
 
-## 変更後仕様
+ここでいう「タブ色」は、中央セル側のカテゴリカード/カテゴリタブ/カテゴリヘッダーに反映される色です。
+実装上の該当UIに合わせてください。
 
-上部タブの高さをできるだけ細くしてください。
-ただし、以下は維持してください。
+## DB/データ構造
 
-* ウィンドウボタン3つが押せる
-* サイドバー開閉ボタンが押せる
-* `GridDesk` と参照パスが読める
-* macOS風ウィンドウボタンとテキストが重ならない
-* ヘッダー余白部分をドラッグしてウィンドウ移動できる
+カテゴリに色を保存する項目がすでにあるか確認してください。
 
-## CSS例
+検索:
+
+```text
+accent_color
+accentColor
+color
+categoryColor
+genre color
+```
+
+既に `accent_color` / `accentColor` がある場合はそれを使ってください。
+
+なければ、カテゴリデータに色を保存する必要があります。
+
+SQLite例:
+
+```sql
+ALTER TABLE genres ADD COLUMN accent_color TEXT DEFAULT '#60a5fa';
+```
+
+または実際のテーブル名が `categories` なら:
+
+```sql
+ALTER TABLE categories ADD COLUMN accent_color TEXT DEFAULT '#60a5fa';
+```
+
+既存のスキーマ命名に合わせてください。
+すでにカラムがある場合は追加しないでください。
+
+## カテゴリ管理UI
+
+左サイドバーのカテゴリ管理で、変更対象カテゴリに対して色を変更できるようにしてください。
+
+例:
+
+```jsx
+<label>
+  タブ色
+  <input
+    type="color"
+    value={selectedCategory?.accent_color ?? selectedCategory?.accentColor ?? "#60a5fa"}
+    onChange={(event) => updateSelectedCategoryColor(event.target.value)}
+  />
+</label>
+```
+
+## 更新処理
+
+既存のカテゴリ更新APIを使ってください。
+
+候補:
+
+```text
+updateCategory
+updateGenre
+category:update
+genre:update
+```
+
+色変更時に保存してください。
+
+```jsx
+async function updateSelectedCategoryColor(color) {
+  if (!selectedManageCategoryId) return;
+
+  await updateCategory(selectedManageCategoryId, {
+    accent_color: color
+  });
+
+  await reloadWorkspaceData();
+}
+```
+
+既存の命名に合わせてください。
+
+## 表示反映
+
+中央セル側のカテゴリカード/ヘッダーに色を反映してください。
+
+例:
+
+```jsx
+<div
+  className="genreCard"
+  style={{
+    "--category-accent-color": category.accent_color ?? "#60a5fa"
+  }}
+>
+```
+
+CSS:
 
 ```css
-.appHeader {
-  height: 32px;
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 10px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--gd-border-subtle);
-  background: rgba(246, 247, 244, var(--gd-panel-opacity, 0.85));
-  backdrop-filter: var(--gd-backdrop-blur, none);
-  -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
-  -webkit-app-region: drag;
+.genreCard {
+  border-color: color-mix(in srgb, var(--category-accent-color, #60a5fa) 45%, transparent);
 }
 
-.appHeaderLeft {
+.genreHeader,
+.genreCardHeader {
+  border-left: 4px solid var(--category-accent-color, #60a5fa);
+}
+
+.genreTitle {
+  color: var(--category-accent-color, inherit);
+}
+```
+
+`color-mix()` の互換性が気になる場合は、単純に以下でも構いません。
+
+```css
+.genreCard {
+  border-color: var(--category-accent-color, var(--gd-border-subtle));
+}
+
+.genreHeader,
+.genreCardHeader {
+  border-left: 4px solid var(--category-accent-color, #60a5fa);
+}
+```
+
+## 完了条件
+
+* カテゴリ管理でカテゴリごとの色を変更できる
+* 色はDBに保存される
+* アプリ再起動後も色が残る
+* 中央セルのカテゴリタブ/ヘッダー/カードに色が反映される
+
+---
+
+# 5. カテゴリ管理で項目ごとに個別折りたたみできるようにする
+
+## 目的
+
+左サイドバーのカテゴリ管理内で、カテゴリ操作項目をさらに個別に折りたためるようにしてください。
+
+ユーザー要望:
+「左サイドバーのカテゴリ管理で項目毎に他宛に折りたためるようにする」
+
+これは、カテゴリ管理セクション内の以下のような項目を個別に折りたためるようにする意味として実装してください。
+
+## 対象項目
+
+カテゴリ管理内を以下のサブセクションに分けてください。
+
+```text
+カテゴリ追加
+カテゴリ変更
+グリッド設定
+タブ色設定
+```
+
+可能なら現在のUIに合わせて調整してください。
+
+## JSX例
+
+```jsx
+<div className="categoryManageSubsections">
+  <details className="sidebarSubsection" open>
+    <summary className="sidebarSubsectionHeader">
+      <span>カテゴリ追加</span>
+      <span className="sidebarSectionChevron">›</span>
+    </summary>
+    <div className="sidebarSubsectionBody">
+      ...
+    </div>
+  </details>
+
+  <details className="sidebarSubsection" open>
+    <summary className="sidebarSubsectionHeader">
+      <span>カテゴリ変更</span>
+      <span className="sidebarSectionChevron">›</span>
+    </summary>
+    <div className="sidebarSubsectionBody">
+      ...
+    </div>
+  </details>
+
+  <details className="sidebarSubsection" open>
+    <summary className="sidebarSubsectionHeader">
+      <span>グリッド設定</span>
+      <span className="sidebarSectionChevron">›</span>
+    </summary>
+    <div className="sidebarSubsectionBody">
+      ...
+    </div>
+  </details>
+
+  <details className="sidebarSubsection" open>
+    <summary className="sidebarSubsectionHeader">
+      <span>タブ色設定</span>
+      <span className="sidebarSectionChevron">›</span>
+    </summary>
+    <div className="sidebarSubsectionBody">
+      ...
+    </div>
+  </details>
+</div>
+```
+
+## CSS
+
+```css
+.sidebarSubsection {
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  border-radius: 9px;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.sidebarSubsectionHeader {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  min-width: 0;
-  overflow: hidden;
-  flex: 1;
-  -webkit-app-region: drag;
-}
-
-.sidebarToggleInHeader {
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--gd-border-subtle);
-  border-radius: 7px;
-  padding: 0;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.18);
-  -webkit-app-region: no-drag;
-}
-
-.appHeaderTitle {
-  flex-shrink: 0;
-  font-size: 14px;
+  user-select: none;
+  padding: 8px 9px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 1;
 }
 
-.appHeaderPath {
-  min-width: 0;
-  font-size: 11px;
-  opacity: 0.72;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-```
-
-もし 32px が厳しければ 34px まで上げても構いません。
-ただし、現在より明確に細くしてください。
-
----
-
-# 5. ドラッグ領域とボタン操作の確認
-
-上部ヘッダーはドラッグ可能にし、ボタン類は no-drag にしてください。
-
-```css
-.appHeader {
-  -webkit-app-region: drag;
+.sidebarSubsectionBody {
+  padding: 8px 9px 10px;
 }
 
-.windowControls,
-.windowControls button,
-.sidebarToggleInHeader {
-  -webkit-app-region: no-drag;
+.sidebarSubsection summary::-webkit-details-marker {
+  display: none;
+}
+
+.sidebarSubsection[open] .sidebarSectionChevron {
+  transform: rotate(90deg);
 }
 ```
 
-`GridDesk` やパス表示部分はドラッグ領域のままで構いません。
+## 折りたたみ状態保存
 
----
+可能なら `settings.json` に保存してください。
 
-# 完了条件
+例:
 
-## ウィンドウボタン
+```json
+{
+  "ui": {
+    "categoryManageSections": {
+      "add": true,
+      "edit": true,
+      "grid": true,
+      "color": true
+    }
+  }
+}
+```
 
-* 3つのウィンドウボタンに赤・黄・緑の色が付いている
-* クリック操作はこれまで通り動く
-* ボタンはドラッグ領域扱いになっていない
+MVPでは `<details>` のブラウザ標準開閉だけでも構いませんが、可能なら保存してください。
 
-## サイドバー開閉ボタン
+## 完了条件
 
-* 開閉ボタンが `GridDesk` の左に表示される
-* ウィンドウボタン3つと重ならない
-* サイドバー開閉はこれまで通り動く
-* サイドバー内の古い開閉ボタンは消えている
-
-## サイドバー折りたたみ
-
-* サイドバーを閉じた時に左ベゼルが残らない
-* collapsed 時のサイドバー幅が 0 になる
-* 中央セル領域が左端まで寄る
-
-## 上部タブ
-
-* 上部タブの高さが以前より細くなっている
-* `GridDesk` と参照パスは横並びで見える
-* ヘッダー余白部分をドラッグしてウィンドウ移動できる
-* ウィンドウボタン、サイドバー開閉ボタンはクリックできる
+* カテゴリ管理内にサブセクションができている
+* カテゴリ追加を折りたためる
+* カテゴリ変更を折りたためる
+* グリッド設定を折りたためる
+* タブ色設定を折りたためる
+* 各サブセクション右端に `>` がある
+* 既存のカテゴリ追加/変更/列数/行数変更は壊れていない
 
 ---
 
@@ -364,28 +618,42 @@ sidebarHeader 内の開閉ボタン
 ```text
 対応結果:
 
-1. ウィンドウボタン色付け
-- 赤/黄/緑の表示: OK / NG
-- クリック動作維持: OK / NG
+1. ウィンドウボタンずれ修正
+- button自体への色付け: OK / NG
+- 表示位置とクリック領域一致: OK / NG
+- close/minimize/maximize 動作維持: OK / NG
 
-2. サイドバー開閉ボタン移動
-- GridDesk 左側へ移動: OK / NG
-- ウィンドウボタン非重複: OK / NG
-- 旧サイドバー内ボタン削除: OK / NG
+2. PC起動時自動起動設定
+- settings.json デフォルトOFF追加: OK / NG
+- normalizeSettings 補完: OK / NG
+- 設定UI追加: OK / NG
+- main IPC追加: OK / NG
+- preload API追加: OK / NG
+- app.setLoginItemSettings 呼び出し: OK / NG
 
-3. サイドバー閉時の左ベゼル削除
-- collapsed width 0: OK / NG
-- 左ベゼルなし: OK / NG
-- 中央セル領域が左へ寄る: OK / NG
+3. 削除済みセル復活ボタン削除
+- 設定UIから削除: OK / NG
+- 手動復活機能削除/未使用化: OK / NG
+- 登録/移動時の自動復活維持: OK / NG
 
-4. 上部タブ高さ調整
-- appHeader 高さ縮小: OK / NG
-- GridDesk/path 横並び維持: OK / NG
-- ドラッグ移動維持: OK / NG
+4. カテゴリタブ色変更
+- 色保存カラム確認/追加: OK / NG
+- カテゴリ管理UI追加: OK / NG
+- 色保存: OK / NG
+- 中央カテゴリ表示への反映: OK / NG
+
+5. カテゴリ管理内サブセクション折りたたみ
+- カテゴリ追加: OK / NG
+- カテゴリ変更: OK / NG
+- グリッド設定: OK / NG
+- タブ色設定: OK / NG
+- 既存操作維持: OK / NG
 
 変更ファイル:
 - src/App.jsx:
 - src/styles.css:
+- electron/main.cjs:
+- electron/preload.cjs:
 - その他:
 
 確認:

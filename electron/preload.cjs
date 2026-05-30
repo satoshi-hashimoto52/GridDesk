@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("gridDesk", {
   closeWindow: () => ipcRenderer.invoke("window:close"),
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggleMaximize"),
+  getOpenAtLogin: () => ipcRenderer.invoke("system:getOpenAtLogin"),
+  setOpenAtLogin: (enabled) => ipcRenderer.invoke("system:setOpenAtLogin", enabled),
   backupWorkspace: (workspacePath) => ipcRenderer.invoke("workspace:backup", workspacePath),
   getSettings: (workspacePath) => ipcRenderer.invoke("settings:get", workspacePath),
   saveSettings: (workspacePath, settings) => ipcRenderer.invoke("settings:save", workspacePath, settings),

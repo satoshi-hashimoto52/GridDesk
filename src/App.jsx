@@ -44,6 +44,12 @@ const defaultSettings = {
       cellRegister: true,
       settings: true
     },
+    categoryManageSections: {
+      add: true,
+      edit: true,
+      grid: true,
+      color: true
+    },
     opacity: {
       appBackground: 0.25,
       sidebar: 0.85,
@@ -69,6 +75,9 @@ const defaultSettings = {
       borderRadius: 12,
       borderOpacity: 0.28
     }
+  },
+  system: {
+    openAtLogin: false
   },
   iconTypes: defaultIconTypes
 };
@@ -154,6 +163,10 @@ function normalizeSettings(rawSettings) {
       sidebarSections: {
         ...defaultSettings.ui.sidebarSections,
         ...(merged.ui?.sidebarSections || {})
+      },
+      categoryManageSections: {
+        ...defaultSettings.ui.categoryManageSections,
+        ...(merged.ui?.categoryManageSections || {})
       },
       blur: {
         ...defaultSettings.ui.blur,
@@ -665,17 +678,6 @@ function App() {
     }
   }
 
-  async function restoreAllCells() {
-    if (!workspace) return;
-    try {
-      const data = await api.restoreAllCells(workspace.workspacePath);
-      adoptWorkspace(data);
-      setMessage("削除済みセルを全て復活しました。");
-    } catch (error) {
-      showError(error);
-    }
-  }
-
   async function openTarget(target) {
     const targetPath = typeof target === "string" ? target : target?.path;
     if (!targetPath) {
@@ -740,6 +742,14 @@ function App() {
     updateSettings({ ui: { sidebarSections: { [key]: open } } });
   }
 
+  function categoryManageSectionOpen(key) {
+    return settings.ui.categoryManageSections?.[key] !== false;
+  }
+
+  function updateCategoryManageSection(key, open) {
+    updateSettings({ ui: { categoryManageSections: { [key]: open } } });
+  }
+
   const selectedEditGenre = genresById.get(String(editGenreId));
 
   return (
@@ -748,9 +758,9 @@ function App() {
       <div className="appContent">
       <header className="appHeader">
         <div className="windowControls" aria-label="ウィンドウ操作">
-          <button type="button" className="windowButton close" aria-label="閉じる" onClick={() => api.closeWindow?.()} />
-          <button type="button" className="windowButton minimize" aria-label="最小化" onClick={() => api.minimizeWindow?.()} />
-          <button type="button" className="windowButton maximize" aria-label="最大化" onClick={() => api.toggleMaximizeWindow?.()} />
+          <button type="button" className="windowButton windowClose" aria-label="閉じる" onClick={() => api.closeWindow?.()} />
+          <button type="button" className="windowButton windowMinimize" aria-label="最小化" onClick={() => api.minimizeWindow?.()} />
+          <button type="button" className="windowButton windowMaximize" aria-label="最大化" onClick={() => api.toggleMaximizeWindow?.()} />
         </div>
         <div className="appHeaderLeft">
           <button
@@ -813,47 +823,115 @@ function App() {
                     <span className="sidebarSectionChevron">‹</span>
                   </summary>
                   <div className="sidebarSectionBody">
-                    <label>
-                      追加カテゴリ名
-                      <input value={genreDraft.name} onChange={(event) => setGenreDraft({ ...genreDraft, name: event.target.value })} />
-                    </label>
-                    <div className="fieldGrid">
-                      <label>
-                        列数
-                        <input type="number" min="1" max="20" value={genreDraft.cols} onChange={(event) => setGenreDraft({ ...genreDraft, cols: event.target.value })} />
-                      </label>
-                      <label>
-                        行数
-                        <input type="number" min="1" max="20" value={genreDraft.rows} onChange={(event) => setGenreDraft({ ...genreDraft, rows: event.target.value })} />
-                      </label>
-                    </div>
-                    <button className="primary" onClick={createGenre}><Plus size={17} />カテゴリ追加</button>
-                    <div className="divider" />
-                    <label>
-                      変更対象カテゴリ
-                      <select value={editGenreId} onChange={(event) => setEditGenreId(event.target.value)}>
-                        {workspace.genres.map((genre) => <option key={genre.id} value={genre.id}>{genre.name}</option>)}
-                      </select>
-                    </label>
-                    {selectedEditGenre && (
-                      <>
-                        <label>
-                          カテゴリ名
-                          <input value={selectedEditGenre.name} onChange={(event) => updateGenre({ id: selectedEditGenre.id, name: event.target.value })} />
-                        </label>
-                        <div className="fieldGrid">
+                    <div className="categoryManageSubsections">
+                      <details
+                        className="sidebarSubsection"
+                        open={categoryManageSectionOpen("add")}
+                        onToggle={(event) => updateCategoryManageSection("add", event.currentTarget.open)}
+                      >
+                        <summary className="sidebarSubsectionHeader">
+                          <span>カテゴリ追加</span>
+                          <span className="sidebarSectionChevron">›</span>
+                        </summary>
+                        <div className="sidebarSubsectionBody">
                           <label>
-                            列数
-                            <input type="number" min="1" max="20" value={selectedEditGenre.cols} onChange={(event) => updateGenre({ id: selectedEditGenre.id, cols: event.target.value })} />
+                            追加カテゴリ名
+                            <input value={genreDraft.name} onChange={(event) => setGenreDraft({ ...genreDraft, name: event.target.value })} />
                           </label>
+                          <div className="fieldGrid">
+                            <label>
+                              列数
+                              <input type="number" min="1" max="20" value={genreDraft.cols} onChange={(event) => setGenreDraft({ ...genreDraft, cols: event.target.value })} />
+                            </label>
+                            <label>
+                              行数
+                              <input type="number" min="1" max="20" value={genreDraft.rows} onChange={(event) => setGenreDraft({ ...genreDraft, rows: event.target.value })} />
+                            </label>
+                          </div>
                           <label>
-                            行数
-                            <input type="number" min="1" max="20" value={selectedEditGenre.rows} onChange={(event) => updateGenre({ id: selectedEditGenre.id, rows: event.target.value })} />
+                            タブ色
+                            <input type="color" value={genreDraft.accentColor} onChange={(event) => setGenreDraft({ ...genreDraft, accentColor: event.target.value })} />
                           </label>
+                          <button className="primary" onClick={createGenre}><Plus size={17} />カテゴリ追加</button>
                         </div>
-                        <button className="danger" onClick={deleteGenre}><Trash2 size={17} />カテゴリ削除</button>
-                      </>
-                    )}
+                      </details>
+
+                      <details
+                        className="sidebarSubsection"
+                        open={categoryManageSectionOpen("edit")}
+                        onToggle={(event) => updateCategoryManageSection("edit", event.currentTarget.open)}
+                      >
+                        <summary className="sidebarSubsectionHeader">
+                          <span>カテゴリ変更</span>
+                          <span className="sidebarSectionChevron">›</span>
+                        </summary>
+                        <div className="sidebarSubsectionBody">
+                          <label>
+                            変更対象カテゴリ
+                            <select value={editGenreId} onChange={(event) => setEditGenreId(event.target.value)}>
+                              {workspace.genres.map((genre) => <option key={genre.id} value={genre.id}>{genre.name}</option>)}
+                            </select>
+                          </label>
+                          {selectedEditGenre && (
+                            <>
+                              <label>
+                                カテゴリ名
+                                <input value={selectedEditGenre.name} onChange={(event) => updateGenre({ id: selectedEditGenre.id, name: event.target.value })} />
+                              </label>
+                              <button className="danger" onClick={deleteGenre}><Trash2 size={17} />カテゴリ削除</button>
+                            </>
+                          )}
+                        </div>
+                      </details>
+
+                      <details
+                        className="sidebarSubsection"
+                        open={categoryManageSectionOpen("grid")}
+                        onToggle={(event) => updateCategoryManageSection("grid", event.currentTarget.open)}
+                      >
+                        <summary className="sidebarSubsectionHeader">
+                          <span>グリッド設定</span>
+                          <span className="sidebarSectionChevron">›</span>
+                        </summary>
+                        <div className="sidebarSubsectionBody">
+                          {selectedEditGenre && (
+                            <div className="fieldGrid">
+                              <label>
+                                列数
+                                <input type="number" min="1" max="20" value={selectedEditGenre.cols} onChange={(event) => updateGenre({ id: selectedEditGenre.id, cols: event.target.value })} />
+                              </label>
+                              <label>
+                                行数
+                                <input type="number" min="1" max="20" value={selectedEditGenre.rows} onChange={(event) => updateGenre({ id: selectedEditGenre.id, rows: event.target.value })} />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+
+                      <details
+                        className="sidebarSubsection"
+                        open={categoryManageSectionOpen("color")}
+                        onToggle={(event) => updateCategoryManageSection("color", event.currentTarget.open)}
+                      >
+                        <summary className="sidebarSubsectionHeader">
+                          <span>タブ色設定</span>
+                          <span className="sidebarSectionChevron">›</span>
+                        </summary>
+                        <div className="sidebarSubsectionBody">
+                          {selectedEditGenre && (
+                            <label>
+                              タブ色
+                              <input
+                                type="color"
+                                value={selectedEditGenre.accent_color || "#2f7d68"}
+                                onChange={(event) => updateGenre({ id: selectedEditGenre.id, accentColor: event.target.value })}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </details>
+                    </div>
                   </div>
                 </details>
 
@@ -927,7 +1005,6 @@ function App() {
                       <button type="button" onClick={() => openWorkspace(api.openWorkspace)}><FolderOpen size={17} />Open</button>
                       <button type="button" onClick={manualBackup} disabled={!workspace}><Archive size={17} />Backup</button>
                       <button type="button" onClick={() => api.revealWorkspace(workspace.workspacePath)} disabled={!workspace}><ExternalLink size={17} />Reveal</button>
-                      <button type="button" onClick={restoreAllCells} disabled={!workspace}>削除済みセルを全て復活</button>
                     </div>
                   </div>
                 </details>
@@ -1035,7 +1112,14 @@ function GenreGrid({
   const itemMap = new Map(items.map((item) => [`${item.x}:${item.y}`, item]));
 
   return (
-    <section className="genreBlock genreCard" style={{ "--accent": genre.accent_color || "#2f7d68" }} onMouseDown={onSelectGenre}>
+    <section
+      className="genreBlock genreCard"
+      style={{
+        "--accent": genre.accent_color || "#2f7d68",
+        "--category-accent-color": genre.accent_color || "#2f7d68"
+      }}
+      onMouseDown={onSelectGenre}
+    >
       <header className="genreHeader">
         <button className="genreCollapseButton" onClick={onToggleCollapsed}>{genre.collapsed ? "+" : "−"}</button>
         <div>
@@ -1375,12 +1459,36 @@ function ItemEditDialog({ item, settings, onClose, onSave }) {
 function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes, onClose }) {
   const current = normalizeSettings(settings || {});
 
+  useEffect(() => {
+    let cancelled = false;
+    api.getOpenAtLogin?.().then((result) => {
+      if (cancelled || !result?.ok) return;
+      if (result.openAtLogin !== current.system.openAtLogin) {
+        onUpdate({ system: { openAtLogin: result.openAtLogin } });
+      }
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function updateOpacity(key, value) {
     onUpdate({ ui: { opacity: { [key]: Number(value) } } });
   }
 
   function updateCell(key, value) {
     onUpdate({ ui: { cell: { [key]: value } } });
+  }
+
+  async function updateOpenAtLogin(enabled) {
+    onUpdate({ system: { openAtLogin: enabled } });
+    const result = await api.setOpenAtLogin?.(enabled);
+    if (result?.ok === false) {
+      onUpdate({ system: { openAtLogin: current.system.openAtLogin } });
+      alert(result.error || "自動起動設定の変更に失敗しました");
+      return;
+    }
+    if (result?.ok) onUpdate({ system: { openAtLogin: result.openAtLogin } });
   }
 
   return (
@@ -1405,6 +1513,14 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
                 onChange={(event) => onUpdate({ ui: { sidebarCollapsed: event.target.checked } })}
               />
               サイドバーを折りたたむ
+            </label>
+            <label className="check settingCheck">
+              <input
+                type="checkbox"
+                checked={current.system.openAtLogin}
+                onChange={(event) => updateOpenAtLogin(event.target.checked)}
+              />
+              PC起動時に自動起動する
             </label>
             {opacityFields.map(([key, label]) => (
               <label className="rangeField" key={key}>
