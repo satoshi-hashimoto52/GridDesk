@@ -32,6 +32,17 @@ const defaultSettings = {
       amount: 12,
       backgroundEnabled: true,
       backgroundAmount: 10
+    },
+    cell: {
+      width: 92,
+      height: 92,
+      gap: 12,
+      iconSize: 32,
+      labelFontSize: 12,
+      showTypeBadge: true,
+      showFileName: true,
+      borderRadius: 12,
+      borderOpacity: 0.28
     }
   },
   iconTypes: {
@@ -106,6 +117,10 @@ function normalizeSettings(rawSettings) {
       blur: {
         ...defaultSettings.ui.blur,
         ...(merged.ui?.blur || {})
+      },
+      cell: {
+        ...defaultSettings.ui.cell,
+        ...(merged.ui?.cell || {})
       }
     },
     iconTypes: normalizedIconTypes

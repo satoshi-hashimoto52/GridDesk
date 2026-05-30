@@ -11,6 +11,13 @@
   --gd-blur-amount: 12px;
   --gd-backdrop-blur: blur(12px);
   --gd-background-blur: blur(10px);
+  --gd-cell-width: 92px;
+  --gd-cell-height: 92px;
+  --gd-cell-gap: 12px;
+  --gd-icon-size: 32px;
+  --gd-label-font-size: 12px;
+  --gd-cell-radius: 12px;
+  --gd-cell-border-opacity: 0.28;
   --gd-border-subtle: rgba(255, 255, 255, 0.28);
   --gd-border-strong: rgba(255, 255, 255, 0.42);
   --gd-border-dark: rgba(20, 30, 30, 0.18);
@@ -776,17 +783,17 @@ label {
 .cellGrid {
   display: grid;
   width: max-content;
-  gap: 12px;
+  gap: var(--gd-cell-gap, 12px);
   align-items: start;
 }
 
 .cell,
 .gridCell {
   position: relative;
-  width: 92px;
-  height: 92px;
-  border: 1px solid var(--gd-border-dark);
-  border-radius: 7px;
+  width: var(--gd-cell-width, 92px);
+  height: var(--gd-cell-height, 92px);
+  border: 1px solid rgba(255, 255, 255, var(--gd-cell-border-opacity, 0.28));
+  border-radius: var(--gd-cell-radius, 12px);
   background: rgba(251, 252, 250, var(--gd-cell-opacity, 0.65)) !important;
   backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
@@ -825,13 +832,13 @@ label {
 .iconCard {
   position: relative;
   pointer-events: auto;
-  width: 100%;
-  height: 100%;
+  width: var(--gd-cell-width, 92px);
+  height: var(--gd-cell-height, 92px);
   border: 1px solid var(--gd-border-subtle);
-  border-radius: 0;
+  border-radius: var(--gd-cell-radius, 12px);
   padding: 18px 6px 6px;
   display: grid;
-  grid-template-rows: 32px 1fr;
+  grid-template-rows: minmax(0, 1fr) auto;
   align-items: center;
   justify-items: center;
   gap: 2px;
@@ -856,7 +863,7 @@ label {
   -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--gd-label-font-size, 12px);
   line-height: 1.18;
 }
 
@@ -880,8 +887,8 @@ label {
 
 .launcherItem .launcherGlyph,
 .iconCard .launcherGlyph {
-  width: 34px;
-  height: 34px;
+  width: calc(var(--gd-icon-size, 32px) + 6px);
+  height: calc(var(--gd-icon-size, 32px) + 6px);
   display: inline-grid;
   place-items: center;
   border-radius: 7px;
@@ -895,7 +902,12 @@ label {
 }
 
 .launcherItem svg,
-.iconCard svg,
+.iconCard svg {
+  width: var(--gd-icon-size, 32px);
+  height: var(--gd-icon-size, 32px);
+  pointer-events: none;
+}
+
 .launcherItem .itemName,
 .iconCard .itemName {
   pointer-events: none;

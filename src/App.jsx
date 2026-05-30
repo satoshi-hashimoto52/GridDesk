@@ -56,6 +56,17 @@ const defaultSettings = {
       amount: 12,
       backgroundEnabled: true,
       backgroundAmount: 10
+    },
+    cell: {
+      width: 92,
+      height: 92,
+      gap: 12,
+      iconSize: 32,
+      labelFontSize: 12,
+      showTypeBadge: true,
+      showFileName: true,
+      borderRadius: 12,
+      borderOpacity: 0.28
     }
   },
   iconTypes: defaultIconTypes
@@ -78,6 +89,16 @@ const opacityFields = [
   ["panel", "パネル"],
   ["cell", "セル"],
   ["iconCard", "アイコンカード"]
+];
+
+const cellRangeFields = [
+  ["width", "セル幅", 64, 160, 1, ""],
+  ["height", "セル高さ", 64, 160, 1, ""],
+  ["gap", "セル間隔", 4, 32, 1, ""],
+  ["iconSize", "アイコンサイズ", 20, 72, 1, ""],
+  ["labelFontSize", "ラベル文字サイズ", 9, 18, 1, ""],
+  ["borderRadius", "セル角丸", 0, 28, 1, ""],
+  ["borderOpacity", "セル枠線の濃さ", 0, 1, 0.01, "fixed2"]
 ];
 
 function isPlainObject(value) {
@@ -128,6 +149,10 @@ function normalizeSettings(rawSettings) {
       blur: {
         ...defaultSettings.ui.blur,
         ...(merged.ui?.blur || {})
+      },
+      cell: {
+        ...defaultSettings.ui.cell,
+        ...(merged.ui?.cell || {})
       }
     },
     iconTypes
@@ -143,6 +168,7 @@ function applyThemeVariables(settings) {
   const ui = settings?.ui || {};
   const opacity = ui.opacity || {};
   const blur = ui.blur || {};
+  const cell = ui.cell || {};
   const root = document.documentElement;
 
   root.style.setProperty("--gd-app-bg-opacity", String(opacity.appBackground ?? 0.25));
@@ -156,6 +182,13 @@ function applyThemeVariables(settings) {
     "--gd-background-blur",
     blur.backgroundEnabled ? `blur(${blur.backgroundAmount ?? blur.amount ?? 10}px)` : "none"
   );
+  root.style.setProperty("--gd-cell-width", `${cell.width ?? 92}px`);
+  root.style.setProperty("--gd-cell-height", `${cell.height ?? 92}px`);
+  root.style.setProperty("--gd-cell-gap", `${cell.gap ?? 12}px`);
+  root.style.setProperty("--gd-icon-size", `${cell.iconSize ?? 32}px`);
+  root.style.setProperty("--gd-label-font-size", `${cell.labelFontSize ?? 12}px`);
+  root.style.setProperty("--gd-cell-radius", `${cell.borderRadius ?? 12}px`);
+  root.style.setProperty("--gd-cell-border-opacity", String(cell.borderOpacity ?? 0.28));
 }
 
 function emptyForm(genreId = "") {
@@ -267,7 +300,8 @@ function App() {
       panel: current?.ui?.opacity?.panel,
       cell: current?.ui?.opacity?.cell,
       iconCard: current?.ui?.opacity?.iconCard,
-      blur: current?.ui?.blur
+      blur: current?.ui?.blur,
+      cellSettings: current?.ui?.cell
     });
   }, [settings]);
 
@@ -296,7 +330,14 @@ function App() {
 
   useEffect(() => {
     scheduleFitWindowWidth();
-  }, [workspace, settings.ui.sidebarCollapsed, settings.ui.autoFitWindowWidth]);
+  }, [
+    workspace,
+    settings.ui.sidebarCollapsed,
+    settings.ui.autoFitWindowWidth,
+    settings.ui.cell?.width,
+    settings.ui.cell?.height,
+    settings.ui.cell?.gap
+  ]);
 
   useEffect(() => {
     if (typeof ResizeObserver === "undefined" || !genreListRef.current) return undefined;
@@ -951,7 +992,14 @@ function GenreGrid({
         </div>
       </header>
       {!genre.collapsed && (
-        <div className="cellGrid" style={{ gridTemplateColumns: `repeat(${genre.cols}, 92px)` }}>
+        <div
+          className="cellGrid"
+          style={{
+            gridTemplateColumns: `repeat(${genre.cols}, var(--gd-cell-width, 92px))`,
+            gridTemplateRows: `repeat(${genre.rows}, var(--gd-cell-height, 92px))`,
+            gap: "var(--gd-cell-gap, 12px)"
+          }}
+        >
           {cells.map(({ x, y }) => {
             const key = `${x}:${y}`;
             const item = itemMap.get(key);
@@ -1016,6 +1064,8 @@ function Cell({
     item.icon_background_opacity ?? iconType.backgroundOpacity ?? 0.9
   ) : undefined;
   const extensionLabel = getExtensionLabel(item);
+  const showTypeBadge = settings?.ui?.cell?.showTypeBadge ?? true;
+  const showFileName = settings?.ui?.cell?.showFileName ?? true;
   const [menu, setMenu] = useState(null);
 
   function handleItemContextMenu(event) {
@@ -1095,11 +1145,11 @@ function Cell({
           }}
           onDragEnd={() => onDragTargetChange(false)}
         >
-          {extensionLabel && <span className="cellTypeBadge">{extensionLabel}</span>}
+          {showTypeBadge && extensionLabel && <span className="cellTypeBadge">{extensionLabel}</span>}
           <span className="launcherGlyph" aria-hidden="true">
             <LineIcon name={iconName} color={iconColor} size={30} />
           </span>
-          <span className="itemName">{getDisplayNameWithoutExtension(item)}</span>
+          {showFileName && <span className="itemName">{getDisplayNameWithoutExtension(item)}</span>}
         </button>
       )}
       {menu && (
@@ -1277,6 +1327,10 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
     onUpdate({ ui: { opacity: { [key]: Number(value) } } });
   }
 
+  function updateCell(key, value) {
+    onUpdate({ ui: { cell: { [key]: value } } });
+  }
+
   return (
     <div className="settingsOverlay" role="presentation" onMouseDown={onClose}>
       <section className="settingsModal" role="dialog" aria-modal="true" aria-label="設定" onMouseDown={(event) => event.stopPropagation()}>
@@ -1403,9 +1457,38 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
             <button onClick={onResetIconTypes}>アイコン設定を初期値に戻す</button>
           </section>
 
-          <section className="settingsSection compact">
+          <section className="settingsSection">
             <h3>セル設定</h3>
-            <p>セルサイズ、セル番号表示、間隔設定の編集 UI は今後実装予定です。</p>
+            {cellRangeFields.map(([key, label, min, max, step, format]) => (
+              <label className="rangeField" key={key}>
+                <span>{label}</span>
+                <input
+                  type="range"
+                  min={min}
+                  max={max}
+                  step={step}
+                  value={current.ui.cell[key]}
+                  onChange={(event) => updateCell(key, Number(event.target.value))}
+                />
+                <output>{format === "fixed2" ? Number(current.ui.cell[key]).toFixed(2) : current.ui.cell[key]}</output>
+              </label>
+            ))}
+            <label className="check settingCheck">
+              <input
+                type="checkbox"
+                checked={current.ui.cell.showTypeBadge}
+                onChange={(event) => updateCell("showTypeBadge", event.target.checked)}
+              />
+              種別バッジ表示
+            </label>
+            <label className="check settingCheck">
+              <input
+                type="checkbox"
+                checked={current.ui.cell.showFileName}
+                onChange={(event) => updateCell("showFileName", event.target.checked)}
+              />
+              ファイル名表示
+            </label>
           </section>
 
           <section className="settingsSection compact">
