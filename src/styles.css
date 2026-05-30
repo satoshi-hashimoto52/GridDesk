@@ -73,8 +73,6 @@ a,
 .tab,
 .tab-button,
 .window-control,
-.windowControls,
-.windowButton,
 .sidebarToggleInHeader {
   -webkit-app-region: no-drag;
 }
@@ -215,56 +213,13 @@ label {
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
-  padding: 4px 10px;
+  padding: 4px 10px 4px 76px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--gd-border-subtle);
   background: rgba(246, 247, 244, var(--gd-panel-opacity, 0.85));
   backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-app-region: drag;
-}
-
-.windowControls {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
-}
-
-.windowButton {
-  width: 12px;
-  min-width: 12px;
-  max-width: 12px;
-  height: 12px;
-  min-height: 12px;
-  max-height: 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.16);
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-  box-sizing: border-box;
-  appearance: none;
-  -webkit-appearance: none;
-  background-clip: padding-box;
-  -webkit-app-region: no-drag;
-}
-
-.windowButton.windowClose {
-  background: #ff5f57;
-}
-
-.windowButton.windowMinimize {
-  background: #ffbd2e;
-}
-
-.windowButton.windowMaximize {
-  background: #28c840;
-}
-
-.windowButton:hover {
-  filter: brightness(0.94);
 }
 
 .appHeaderLeft {
@@ -526,7 +481,7 @@ label {
   background: rgba(255, 255, 255, var(--gd-panel-opacity, 0.9)) !important;
   backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
-  border: 1px solid var(--gd-border-subtle);
+  border: 1px solid rgba(60, 70, 80, 0.34);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -542,6 +497,11 @@ label {
   color: #223028;
   font-size: 13px;
   font-weight: 750;
+  border-bottom: 1px solid rgba(60, 70, 80, 0.22);
+}
+
+.sidebarSection:not([open]) .sidebarSectionHeader {
+  border-bottom: none;
 }
 
 .sidebarSectionHeader::-webkit-details-marker {
@@ -596,7 +556,7 @@ label {
 }
 
 .sidebarSubsection {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(60, 70, 80, 0.3);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
@@ -613,6 +573,11 @@ label {
   color: #26342d;
   font-size: 12px;
   font-weight: 700;
+  border-bottom: 1px solid rgba(60, 70, 80, 0.2);
+}
+
+.sidebarSubsection:not([open]) .sidebarSubsectionHeader {
+  border-bottom: none;
 }
 
 .sidebarSubsectionHeader::-webkit-details-marker,
@@ -665,6 +630,20 @@ label {
   border-color: #e3c2c5;
 }
 
+.categoryDeleteArea {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(60, 70, 80, 0.18);
+}
+
+.categoryDeleteButton {
+  width: 100%;
+  justify-content: center;
+  background: rgba(255, 245, 246, 0.72);
+  border-color: rgba(197, 65, 78, 0.45);
+  color: #9f2f38;
+}
+
 .divider {
   height: 1px;
   background: #e6ebe4;
@@ -705,6 +684,14 @@ label {
   gap: 8px;
 }
 
+.registerTopActions button,
+.sidebar button,
+.sidebar input,
+.sidebar select,
+.sidebar textarea {
+  border: 1px solid rgba(60, 70, 80, 0.34);
+}
+
 .workModePanel {
   display: grid;
   gap: 8px;
@@ -713,7 +700,7 @@ label {
 .workModeButton {
   width: 100%;
   min-height: 38px;
-  border: 1px solid transparent;
+  border: 1px solid rgba(60, 70, 80, 0.38);
   border-radius: 10px;
   padding: 8px 10px;
   color: #ffffff;
@@ -774,7 +761,7 @@ label {
 
 .workspaceActionButtons button {
   width: 100%;
-  border: 1px solid var(--gd-border-subtle);
+  border: 1px solid rgba(60, 70, 80, 0.38);
   border-radius: 10px;
   padding: 8px 10px;
   cursor: pointer;
@@ -1051,6 +1038,49 @@ label {
   border-color: rgba(220, 38, 38, 0.20);
 }
 
+.textHoverPreview {
+  position: fixed;
+  z-index: 90;
+  width: min(460px, calc(100vw - 28px));
+  max-height: min(420px, calc(100vh - 28px));
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(60, 70, 80, 0.32);
+  border-radius: 8px;
+  background: rgba(251, 252, 250, 0.96);
+  box-shadow: 0 16px 44px rgba(30, 37, 33, 0.2);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.textHoverPreviewTitle {
+  min-width: 0;
+  overflow: hidden;
+  color: #26342d;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.textHoverPreview pre {
+  max-height: 320px;
+  margin: 0;
+  overflow: hidden;
+  color: #36443d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.textHoverPreviewFooter {
+  color: #6f7d76;
+  font-size: 11px;
+}
+
 .toast {
   position: fixed;
   right: 18px;
@@ -1140,18 +1170,66 @@ label {
   overflow: auto;
   padding: 16px 18px 18px;
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .settingsSection {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
+  display: block;
+  padding: 0;
   border: 1px solid var(--gd-border-subtle);
   border-radius: 8px;
   background: rgba(251, 252, 250, var(--gd-panel-opacity, 0.9));
   backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
+  overflow: hidden;
+}
+
+.settingsSectionHeader {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 13px;
+  color: #223028;
+  font-size: 14px;
+  font-weight: 750;
+  border-bottom: 1px solid rgba(60, 70, 80, 0.2);
+}
+
+.settingsSection:not([open]) .settingsSectionHeader {
+  border-bottom: none;
+}
+
+.settingsSectionHeader::-webkit-details-marker,
+.settingsSection summary::-webkit-details-marker {
+  display: none;
+}
+
+.settingsSectionHeader::marker {
+  content: "";
+}
+
+.settingsSectionChevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.72;
+  transform: rotate(0deg);
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+.settingsSection[open] .settingsSectionChevron {
+  transform: rotate(90deg);
+  opacity: 0.95;
+}
+
+.settingsSectionBody {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
 }
 
 .settingsSection h3 {
@@ -1159,7 +1237,8 @@ label {
   font-size: 15px;
 }
 
-.settingsSection.compact p {
+.settingsSection.compact p,
+.settingsSection.compact .settingsSectionBody p {
   margin: 0;
   color: #65736d;
   line-height: 1.55;

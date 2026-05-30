@@ -50,6 +50,14 @@ const defaultSettings = {
       grid: true,
       color: true
     },
+    settingsSections: {
+      display: true,
+      background: true,
+      system: true,
+      icon: true,
+      cell: true,
+      other: true
+    },
     opacity: {
       appBackground: 0.25,
       sidebar: 0.85,
@@ -167,6 +175,10 @@ function normalizeSettings(rawSettings) {
       categoryManageSections: {
         ...defaultSettings.ui.categoryManageSections,
         ...(merged.ui?.categoryManageSections || {})
+      },
+      settingsSections: {
+        ...defaultSettings.ui.settingsSections,
+        ...(merged.ui?.settingsSections || {})
       },
       blur: {
         ...defaultSettings.ui.blur,
@@ -304,9 +316,13 @@ function App() {
   const sidebarRef = useRef(null);
   const genreListRef = useRef(null);
   const fitWindowTimer = useRef(null);
+  const hoverPreviewTimerRef = useRef(null);
+  const hoverPreviewRequestRef = useRef(0);
+  const previewCacheRef = useRef(new Map());
   const [workMode, setWorkMode] = useState(WORK_MODES.REGISTER);
   const [dragTargetCell, setDragTargetCell] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
+  const [hoverPreview, setHoverPreview] = useState(null);
   const [genreDraft, setGenreDraft] = useState({ name: "", cols: 6, rows: 3, accentColor: "#2f7d68", memo: "" });
   const [editGenreId, setEditGenreId] = useState("");
   const [itemForm, setItemForm] = useState(emptyForm());
@@ -320,6 +336,7 @@ function App() {
     return () => {
       if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
       if (fitWindowTimer.current) clearTimeout(fitWindowTimer.current);
+      if (hoverPreviewTimerRef.current) clearTimeout(hoverPreviewTimerRef.current);
     };
   }, []);
 
@@ -750,6 +767,47 @@ function App() {
     updateSettings({ ui: { categoryManageSections: { [key]: open } } });
   }
 
+  function handleIconHoverStart(event, item) {
+    if (!item?.path) return;
+    const anchorRect = event.currentTarget.getBoundingClientRect();
+    const requestId = hoverPreviewRequestRef.current + 1;
+    hoverPreviewRequestRef.current = requestId;
+    const previewPosition = {
+      x: Math.max(14, Math.min(anchorRect.right + 10, window.innerWidth - 474)),
+      y: Math.max(14, Math.min(anchorRect.top, window.innerHeight - 434))
+    };
+    if (hoverPreviewTimerRef.current) clearTimeout(hoverPreviewTimerRef.current);
+    hoverPreviewTimerRef.current = window.setTimeout(async () => {
+      const targetPath = item.path;
+      const cached = previewCacheRef.current.get(targetPath);
+      if (cached) {
+        if (cached.ok && hoverPreviewRequestRef.current === requestId) {
+          setHoverPreview({ ...previewPosition, item, ...cached });
+        }
+        return;
+      }
+
+      try {
+        const result = await api.previewTextFile?.(targetPath);
+        previewCacheRef.current.set(targetPath, result);
+        if (result?.ok && hoverPreviewRequestRef.current === requestId) {
+          setHoverPreview({ ...previewPosition, item, ...result });
+        }
+      } catch (error) {
+        console.debug("Text preview failed", error);
+      }
+    }, 400);
+  }
+
+  function handleIconHoverEnd() {
+    hoverPreviewRequestRef.current += 1;
+    if (hoverPreviewTimerRef.current) {
+      clearTimeout(hoverPreviewTimerRef.current);
+      hoverPreviewTimerRef.current = null;
+    }
+    setHoverPreview(null);
+  }
+
   const selectedEditGenre = genresById.get(String(editGenreId));
 
   return (
@@ -757,11 +815,6 @@ function App() {
       <div className="appBackgroundOverlay" />
       <div className="appContent">
       <header className="appHeader">
-        <div className="windowControls" aria-label="ウィンドウ操作">
-          <button type="button" className="windowButton windowClose" aria-label="閉じる" onClick={() => api.closeWindow?.()} />
-          <button type="button" className="windowButton windowMinimize" aria-label="最小化" onClick={() => api.minimizeWindow?.()} />
-          <button type="button" className="windowButton windowMaximize" aria-label="最大化" onClick={() => api.toggleMaximizeWindow?.()} />
-        </div>
         <div className="appHeaderLeft">
           <button
             type="button"
@@ -878,7 +931,9 @@ function App() {
                                 カテゴリ名
                                 <input value={selectedEditGenre.name} onChange={(event) => updateGenre({ id: selectedEditGenre.id, name: event.target.value })} />
                               </label>
-                              <button className="danger" onClick={deleteGenre}><Trash2 size={17} />カテゴリ削除</button>
+                              <div className="categoryDeleteArea">
+                                <button className="danger categoryDeleteButton" onClick={deleteGenre}><Trash2 size={17} />カテゴリ削除</button>
+                              </div>
                             </>
                           )}
                         </div>
@@ -1047,6 +1102,8 @@ function App() {
                     }}
                     onDeleteItem={deleteItem}
                     onRevealItem={revealTarget}
+                    onHoverItemStart={handleIconHoverStart}
+                    onHoverItemEnd={handleIconHoverEnd}
                   />
                 ))}
               </div>
@@ -1078,6 +1135,14 @@ function App() {
       )}
 
       {message && <div className="toast" onClick={() => setMessage("")}>{message}</div>}
+      {hoverPreview && createPortal(
+        <div className="textHoverPreview" style={{ left: hoverPreview.x, top: hoverPreview.y }}>
+          <div className="textHoverPreviewTitle">{hoverPreview.item?.name || hoverPreview.item?.path}</div>
+          <pre>{hoverPreview.text}</pre>
+          {hoverPreview.truncated && <div className="textHoverPreviewFooter">先頭のみ表示しています</div>}
+        </div>,
+        document.body
+      )}
       </div>
     </div>
   );
@@ -1103,7 +1168,9 @@ function GenreGrid({
   onEditItem,
   onRenameItem,
   onDeleteItem,
-  onRevealItem
+  onRevealItem,
+  onHoverItemStart,
+  onHoverItemEnd
 }) {
   const cells = [];
   for (let y = 0; y < genre.rows; y += 1) {
@@ -1162,6 +1229,8 @@ function GenreGrid({
                 onRenameItem={onRenameItem}
                 onDeleteItem={onDeleteItem}
                 onRevealItem={onRevealItem}
+                onHoverItemStart={onHoverItemStart}
+                onHoverItemEnd={onHoverItemEnd}
               />
             );
           })}
@@ -1190,7 +1259,9 @@ function Cell({
   onEditItem,
   onRenameItem,
   onDeleteItem,
-  onRevealItem
+  onRevealItem,
+  onHoverItemStart,
+  onHoverItemEnd
 }) {
   const iconType = getIconTypeSetting(item?.item_type, settings);
   const iconName = item?.icon_name || iconType.icon;
@@ -1272,6 +1343,8 @@ function Cell({
           onContextMenu={handleItemContextMenu}
           onClick={handleIconClick}
           onDoubleClick={handleIconDoubleClick}
+          onMouseEnter={(event) => onHoverItemStart?.(event, item)}
+          onMouseLeave={() => onHoverItemEnd?.()}
           onDragStart={(event) => {
             if (event.button === 2) {
               event.preventDefault();
@@ -1491,6 +1564,14 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
     if (result?.ok) onUpdate({ system: { openAtLogin: result.openAtLogin } });
   }
 
+  function settingsSectionOpen(key) {
+    return current.ui.settingsSections?.[key] !== false;
+  }
+
+  function updateSettingsSection(key, open) {
+    onUpdate({ ui: { settingsSections: { [key]: open } } });
+  }
+
   return (
     <div className="settingsOverlay" role="presentation" onMouseDown={onClose}>
       <section className="settingsModal" role="dialog" aria-modal="true" aria-label="設定" onMouseDown={(event) => event.stopPropagation()}>
@@ -1503,8 +1584,16 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
         </header>
 
         <div className="settingsBody">
-          <section className="settingsSection">
-            <h3>表示設定</h3>
+          <details
+            className="settingsSection"
+            open={settingsSectionOpen("display")}
+            onToggle={(event) => updateSettingsSection("display", event.currentTarget.open)}
+          >
+            <summary className="settingsSectionHeader">
+              <span>表示設定</span>
+              <span className="settingsSectionChevron">›</span>
+            </summary>
+            <div className="settingsSectionBody">
             <p className="settingNote">背景透過度はアプリ全体の背景オーバーレイに適用されます。0にすると完全透明、1にすると不透明に近くなります。背景ブラーはデスクトップ背景に対して適用されます。</p>
             <label className="check settingCheck">
               <input
@@ -1513,14 +1602,6 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
                 onChange={(event) => onUpdate({ ui: { sidebarCollapsed: event.target.checked } })}
               />
               サイドバーを折りたたむ
-            </label>
-            <label className="check settingCheck">
-              <input
-                type="checkbox"
-                checked={current.system.openAtLogin}
-                onChange={(event) => updateOpenAtLogin(event.target.checked)}
-              />
-              PC起動時に自動起動する
             </label>
             {opacityFields.map(([key, label]) => (
               <label className="rangeField" key={key}>
@@ -1536,6 +1617,19 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
                 <output>{Number(current.ui.opacity[key]).toFixed(2)}</output>
               </label>
             ))}
+            </div>
+          </details>
+
+          <details
+            className="settingsSection"
+            open={settingsSectionOpen("background")}
+            onToggle={(event) => updateSettingsSection("background", event.currentTarget.open)}
+          >
+            <summary className="settingsSectionHeader">
+              <span>背景設定</span>
+              <span className="settingsSectionChevron">›</span>
+            </summary>
+            <div className="settingsSectionBody">
             <label className="check settingCheck">
               <input
                 type="checkbox"
@@ -1576,10 +1670,19 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
               />
               <output>{current.ui.blur.backgroundAmount}px</output>
             </label>
-          </section>
+            </div>
+          </details>
 
-          <section className="settingsSection">
-            <h3>アイコン設定</h3>
+          <details
+            className="settingsSection"
+            open={settingsSectionOpen("icon")}
+            onToggle={(event) => updateSettingsSection("icon", event.currentTarget.open)}
+          >
+            <summary className="settingsSectionHeader">
+              <span>アイコン設定</span>
+              <span className="settingsSectionChevron">›</span>
+            </summary>
+            <div className="settingsSectionBody">
             <div className="iconTypeTable">
               <div className="iconTypeHeader">
                 <span>種類</span>
@@ -1623,10 +1726,19 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
               })}
             </div>
             <button onClick={onResetIconTypes}>アイコン設定を初期値に戻す</button>
-          </section>
+            </div>
+          </details>
 
-          <section className="settingsSection">
-            <h3>セル設定</h3>
+          <details
+            className="settingsSection"
+            open={settingsSectionOpen("cell")}
+            onToggle={(event) => updateSettingsSection("cell", event.currentTarget.open)}
+          >
+            <summary className="settingsSectionHeader">
+              <span>セル設定</span>
+              <span className="settingsSectionChevron">›</span>
+            </summary>
+            <div className="settingsSectionBody">
             {cellRangeFields.map(([key, label, min, max, step, format]) => (
               <label className="rangeField" key={key}>
                 <span>{label}</span>
@@ -1668,12 +1780,43 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
               />
               ファイル名表示
             </label>
-          </section>
+            </div>
+          </details>
 
-          <section className="settingsSection compact">
-            <h3>動作設定</h3>
+          <details
+            className="settingsSection"
+            open={settingsSectionOpen("system")}
+            onToggle={(event) => updateSettingsSection("system", event.currentTarget.open)}
+          >
+            <summary className="settingsSectionHeader">
+              <span>システム設定</span>
+              <span className="settingsSectionChevron">›</span>
+            </summary>
+            <div className="settingsSectionBody">
+              <label className="check settingCheck">
+                <input
+                  type="checkbox"
+                  checked={current.system.openAtLogin}
+                  onChange={(event) => updateOpenAtLogin(event.target.checked)}
+                />
+                PC起動時に自動起動する
+              </label>
+            </div>
+          </details>
+
+          <details
+            className="settingsSection compact"
+            open={settingsSectionOpen("other")}
+            onToggle={(event) => updateSettingsSection("other", event.currentTarget.open)}
+          >
+            <summary className="settingsSectionHeader">
+              <span>その他</span>
+              <span className="settingsSectionChevron">›</span>
+            </summary>
+            <div className="settingsSectionBody">
             <p>重複時の挙動、削除確認、リンク切れ警告の編集 UI は今後実装予定です。</p>
-          </section>
+            </div>
+          </details>
         </div>
       </section>
     </div>

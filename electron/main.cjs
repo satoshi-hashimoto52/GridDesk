@@ -1,8 +1,32 @@
 const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require("electron");
 const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
+
+const TEXT_PREVIEW_EXTENSIONS = new Set([
+  ".txt",
+  ".md",
+  ".csv",
+  ".json",
+  ".log",
+  ".ini",
+  ".yaml",
+  ".yml",
+  ".xml",
+  ".html",
+  ".css",
+  ".js",
+  ".ts",
+  ".jsx",
+  ".tsx",
+  ".py",
+  ".sql",
+  ".bat",
+  ".cmd",
+  ".ps1"
+]);
 
 const isDev = !app.isPackaged;
 const appStatePath = () => path.join(app.getPath("userData"), "state.json");
@@ -25,6 +49,14 @@ const defaultSettings = {
       edit: true,
       grid: true,
       color: true
+    },
+    settingsSections: {
+      display: true,
+      background: true,
+      system: true,
+      icon: true,
+      cell: true,
+      other: true
     },
     opacity: {
       appBackground: 0.25,
@@ -131,6 +163,10 @@ function normalizeSettings(rawSettings) {
       categoryManageSections: {
         ...defaultSettings.ui.categoryManageSections,
         ...(merged.ui?.categoryManageSections || {})
+      },
+      settingsSections: {
+        ...defaultSettings.ui.settingsSections,
+        ...(merged.ui?.settingsSections || {})
       },
       blur: {
         ...defaultSettings.ui.blur,
@@ -447,24 +483,6 @@ app.on("activate", () => {
 
 ipcMain.handle("app:getState", () => readJson(appStatePath(), { recentWorkspaces: [] }));
 
-ipcMain.handle("window:close", (event) => {
-  BrowserWindow.fromWebContents(event.sender)?.close();
-});
-
-ipcMain.handle("window:minimize", (event) => {
-  BrowserWindow.fromWebContents(event.sender)?.minimize();
-});
-
-ipcMain.handle("window:toggleMaximize", (event) => {
-  const browserWindow = BrowserWindow.fromWebContents(event.sender);
-  if (!browserWindow) return;
-  if (browserWindow.isMaximized()) {
-    browserWindow.unmaximize();
-  } else {
-    browserWindow.maximize();
-  }
-});
-
 ipcMain.handle("system:getOpenAtLogin", async () => {
   const loginSettings = app.getLoginItemSettings();
   return { ok: true, openAtLogin: Boolean(loginSettings.openAtLogin) };
@@ -475,6 +493,45 @@ ipcMain.handle("system:setOpenAtLogin", async (_event, enabled) => {
     app.setLoginItemSettings({ openAtLogin: Boolean(enabled) });
     const loginSettings = app.getLoginItemSettings();
     return { ok: true, openAtLogin: Boolean(loginSettings.openAtLogin) };
+  } catch (error) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+ipcMain.handle("file:previewText", async (_event, targetPath) => {
+  try {
+    if (!targetPath || typeof targetPath !== "string") return { ok: false, error: "パスが空です" };
+    if (/^https?:\/\//i.test(targetPath)) return { ok: false, skipped: true, reason: "URLは対象外です" };
+
+    const ext = path.extname(targetPath).toLowerCase();
+    if (!TEXT_PREVIEW_EXTENSIONS.has(ext)) {
+      return { ok: false, skipped: true, reason: "テキストプレビュー対象外です" };
+    }
+
+    const stat = await fsp.stat(targetPath);
+    if (!stat.isFile()) return { ok: false, skipped: true, reason: "ファイルではありません" };
+
+    const maxBytes = 16 * 1024;
+    const handle = await fsp.open(targetPath, "r");
+    try {
+      const buffer = Buffer.alloc(Math.min(maxBytes, stat.size));
+      const result = await handle.read(buffer, 0, buffer.length, 0);
+      const chunk = buffer.subarray(0, result.bytesRead);
+      if (chunk.includes(0)) return { ok: false, skipped: true, reason: "バイナリファイルの可能性があります" };
+
+      const text = chunk.toString("utf8");
+      const allLines = text.split(/\r?\n/);
+      const lines = allLines.slice(0, 20);
+      return {
+        ok: true,
+        text: lines.join("\n"),
+        truncated: stat.size > maxBytes || allLines.length > 20,
+        size: stat.size,
+        ext
+      };
+    } finally {
+      await handle.close();
+    }
   } catch (error) {
     return { ok: false, error: String(error?.message ?? error) };
   }
