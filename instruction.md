@@ -1,165 +1,135 @@
+# GridDesk 修正指示：ホバーテキスト全文表示・カテゴリ管理内の項目整理
 
-# GridDesk 修正指示：設定折りたたみ高さ・ホバーテキストスクロール・サイドバー見出し線削除
+今回は以下の2点だけ修正してください。
 
-今回は以下の3点だけ修正してください。
-
-1. 設定内の折りたたみ項目を開いた時に、内容が途中で切れず最後まで開くようにする
-2. テキストホバープレビューをスクロールで全文閲覧できるようにする
-3. 左サイドバー各項目の項目名直下の線が最初のボタン/ラベルと重なるため、その線を削除する
+1. ホバーテキストがまだ一部表示になっているため、読み込んだ範囲を最後までスクロール閲覧できるようにする
+2. カテゴリ管理の「グリッド設定」と「タブ色設定」を、「カテゴリ変更」コンテナ内へ移動する
 
 ## 禁止事項
 
 今回は以下を触らないでください。
 
-- ファイル/フォルダ起動処理
-- 右クリックメニュー
-- 削除モード
-- セル登録ロジック
-- DBスキーマ
-- 背景透過/ブラーの設定値
-- カテゴリ管理ロジック
-- ウィンドウ幅自動フィット
-- テキストプレビューの読み込み上限
-- テキストプレビューの対象拡張子
+* ファイル/フォルダ起動処理
+* 右クリックメニュー
+* 削除モード
+* セル登録ロジック
+* DBスキーマ
+* 背景透過/ブラー
+* セル設定
+* ウィンドウ幅自動フィット
+* テキストプレビューの対象拡張子
+* テキストプレビューの読み込みIPCの大規模変更
+* カテゴリ色保存処理の大規模変更
 
 ---
 
-# 1. 設定内の折りたたみ項目が開き切らない問題
-
-## 症状
-
-設定画面内の `<details>` 形式の折りたたみ項目を開いた時、内容が途中で切れたり、最後まで開き切らないことがあります。
-
-## 原因候補
-
-以下のようなCSSが原因の可能性があります。
-
-```css
-.settingsSection {
-  overflow: hidden;
-  max-height: ...
-}
-
-.settingsSectionBody {
-  max-height: ...
-  overflow: hidden;
-}
-
-.settingsModal {
-  overflow: hidden;
-}
-```
-
-`details[open]` の中身が、親要素の `max-height` や `overflow: hidden` によって切れている可能性があります。
-
----
-
-## 修正方針
-
-設定モーダル全体はスクロール可能にし、各設定セクションは開いた分だけ自然な高さになるようにしてください。
-
-## CSS修正
-
-`src/styles.css` の設定画面関連CSSを確認し、以下を反映してください。
-
-```css
-.settingsModal,
-.settingsPanel,
-.settingsContent {
-  min-height: 0;
-}
-
-.settingsModal {
-  max-height: calc(100vh - 48px);
-  overflow: hidden;
-}
-
-.settingsContent {
-  overflow-y: auto;
-  overflow-x: hidden;
-  max-height: calc(100vh - 96px);
-  padding-right: 6px;
-}
-
-.settingsSection {
-  overflow: visible;
-}
-
-.settingsSection[open] {
-  overflow: visible;
-}
-
-.settingsSectionBody {
-  overflow: visible;
-  max-height: none;
-  height: auto;
-}
-```
-
-既存クラス名が異なる場合は、実際に使われている設定モーダルのクラスに合わせてください。
-
----
-
-## 注意
-
-`settingsSection` にアニメーション目的で `max-height` を使っている場合は、一旦削除してください。
-今回の優先は、開いた内容が確実に見えることです。
-
-削除対象例:
-
-```css
-.settingsSectionBody {
-  max-height: 0;
-  transition: max-height ...
-}
-
-.settingsSection[open] .settingsSectionBody {
-  max-height: 300px;
-}
-```
-
-このような固定 `max-height` は、内容が増えると切れる原因になります。
-
----
-
-## 完了条件
-
-* 設定内の各セクションを開いた時、内容が最後まで表示される
-* セル設定を開いても途中で切れない
-* アイコン設定を開いても途中で切れない
-* 設定モーダル全体は必要に応じて縦スクロールできる
-* 開いた設定項目が他の項目に重ならない
-
----
-
-# 2. テキストホバープレビューをスクロールで全文閲覧可能にする
+# 1. ホバーテキストが一部表示のままになる問題を修正
 
 ## 現状
 
-テキストホバープレビューは表示されるが、内容が長い場合に全文を閲覧できません。
+テキスト系ファイルのホバープレビューは表示されますが、まだ一部しか表示されません。
 
-## 変更後仕様
+前回対応で `overflow:auto` は入っていますが、実際には以下のどれかが原因で全文閲覧できていない可能性があります。
 
-ホバーテキスト表示領域内でスクロールして、読み込んだ範囲の全文を閲覧できるようにしてください。
-
-重要:
-読み込み上限は現状のままで構いません。
-今回は **表示領域内でスクロール可能にする** ことが目的です。
+* main process 側で 20行に切り詰めている
+* renderer 側で表示テキストをさらに切っている
+* `.textHoverPreview pre` に `max-height` や `overflow:hidden` が残っている
+* `.textHoverPreview` 全体の高さ計算で `pre` が伸びていない
+* `line-clamp` / `max-lines` / `height` 固定が残っている
 
 ---
 
-## CSS修正
+## 重要方針
 
-現在 `.textHoverPreview` や `.textHoverPreview pre` に以下のような指定がある可能性があります。
+今回の目的は「ホバー表示で読み込んだテキストをスクロールで最後まで見られること」です。
 
-```css
-overflow: hidden;
-max-height: 320px;
+軽さは維持しつつ、**20行制限は撤廃または緩和**してください。
+読み込み上限は 16KB のままで構いません。
+
+つまり、
+
+```text
+読む量: 最大16KB
+表示: 読み込んだ範囲は全部スクロールで閲覧可能
 ```
 
-これを、プレビュー全体または `pre` 部分でスクロール可能にしてください。
+にしてください。
 
-推奨:
+---
+
+## main process の修正
+
+`electron/main.cjs` の `file:previewText` を確認してください。
+
+現在、以下のような処理がある可能性があります。
+
+```js
+const lines = text.split(/\r?\n/).slice(0, 20);
+
+return {
+  ok: true,
+  text: lines.join("\n"),
+  truncated: stat.size > maxBytes || text.split(/\r?\n/).length > 20,
+  size: stat.size,
+  ext
+};
+```
+
+この場合、20行以降はそもそも renderer に渡っていません。
+以下のように修正してください。
+
+```js
+const text = chunk.toString("utf8");
+
+return {
+  ok: true,
+  text,
+  truncated: stat.size > maxBytes,
+  size: stat.size,
+  ext
+};
+```
+
+## 注意
+
+* 読み込み上限 `16 * 1024` は維持してよい
+* `slice(0, 20)` は削除する
+* 表示行数制限ではなく、プレビュー枠内スクロールで対応する
+* バイナリ判定は維持する
+* 非対象拡張子の除外は維持する
+
+---
+
+## renderer 側の確認
+
+`src/App.jsx` で、hoverPreview の text を表示する直前に `slice` していないか確認してください。
+
+検索してください。
+
+```text
+slice(0, 20)
+split(/\r?\n/)
+hoverPreview.text
+textHoverPreview
+```
+
+以下のような処理があれば削除または修正してください。
+
+```jsx
+hoverPreview.text.split(/\r?\n/).slice(0, 20).join("\n")
+```
+
+表示はそのまま以下でよいです。
+
+```jsx
+<pre>{hoverPreview.text}</pre>
+```
+
+---
+
+## CSS の再修正
+
+`src/styles.css` の `.textHoverPreview` / `.textHoverPreview pre` を確認し、以下のようにしてください。
 
 ```css
 .textHoverPreview {
@@ -167,12 +137,13 @@ max-height: 320px;
   z-index: 2147483646;
   width: 420px;
   max-width: min(520px, calc(100vw - 24px));
-  max-height: min(520px, calc(100vh - 24px));
+  max-height: min(560px, calc(100vh - 24px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   pointer-events: auto;
   user-select: text;
+  -webkit-app-region: no-drag;
 }
 
 .textHoverPreviewTitle {
@@ -180,10 +151,12 @@ max-height: 320px;
 }
 
 .textHoverPreview pre {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   max-height: none;
-  overflow: auto;
+  height: auto;
+  overflow-y: auto;
+  overflow-x: auto;
   margin: 0;
   padding: 10px;
   white-space: pre-wrap;
@@ -196,134 +169,239 @@ max-height: 320px;
 }
 ```
 
-## スクロールバー見た目
-
-必要なら以下も追加してください。
+以下が残っていたら削除してください。
 
 ```css
-.textHoverPreview pre::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+.textHoverPreview {
+  overflow: hidden;
 }
 
-.textHoverPreview pre::-webkit-scrollbar-thumb {
-  background: rgba(80, 90, 100, 0.45);
-  border-radius: 999px;
-}
-
-.textHoverPreview pre::-webkit-scrollbar-track {
-  background: transparent;
+.textHoverPreview pre {
+  max-height: 240px;
+  overflow: hidden;
 }
 ```
 
+ただし `.textHoverPreview` 本体の `overflow: hidden` は、角丸の外へはみ出さない目的なら残して構いません。
+その場合でも、`pre` 側は必ず `overflow-y: auto` にしてください。
+
 ---
 
-## イベント注意
+## 高さを確実にするための構造確認
 
-プレビュー内でホイールスクロールしても、背後の中央セル領域がスクロールしすぎないように、必要なら `onWheel` で伝播を止めてください。
-
-JSX例:
+Portal表示部分が以下のようになっているか確認してください。
 
 ```jsx
 <div
   className="textHoverPreview"
+  style={{
+    left: hoverPreview.x,
+    top: hoverPreview.y
+  }}
   onMouseEnter={...}
   onMouseLeave={...}
   onWheel={(event) => event.stopPropagation()}
 >
+  <div className="textHoverPreviewTitle">
+    {hoverPreview.item?.name ?? hoverPreview.item?.path}
+  </div>
+
+  <pre>{hoverPreview.text}</pre>
+
+  {hoverPreview.truncated && (
+    <div className="textHoverPreviewFooter">
+      先頭のみ表示しています
+    </div>
+  )}
+</div>
 ```
+
+`pre` をさらに別の `div` で包んでいる場合、その親にも `min-height: 0` と `overflow: auto` が必要です。
 
 ---
 
 ## 完了条件
 
-* 長い `.txt` や `.md` のプレビュー内でスクロールできる
-* プレビュー領域上にカーソルがある間は消えない
-* スクロールしても背面のセル領域が不自然にスクロールしない
-* 読み込み上限は現状維持
+以下を実画面で確認してください。
+
+* 30行以上ある `.txt` ファイルで、プレビュー内スクロールにより下の行まで見られる
+* 30行以上ある `.md` ファイルで、プレビュー内スクロールにより下の行まで見られる
+* 20行で切れていない
+* 読み込み上限 16KB を超える場合は `先頭のみ表示しています` が出る
+* プレビュー領域にカーソルがある間は消えない
+* スクロール中に背面のセル領域が不自然にスクロールしない
 * UIが重くならない
 
 ---
 
-# 3. 左サイドバー各項目名直下の線を削除する
+# 2. カテゴリ管理の「グリッド設定」と「タブ色設定」をカテゴリ変更コンテナへ移動
 
-## 症状
+## 現状
 
-左サイドバーの各項目で、項目名直下の線が最初のボタンまたはラベルと重なっています。
+左サイドバーのカテゴリ管理内で、以下がカテゴリ変更とは別コンテナになっています。
 
-対象例:
-
-* カテゴリ管理
-* セル登録
-* 設定
-* カテゴリ管理内のサブセクション
-* 設定内サブセクションではなく、今回は左サイドバー側のみ
-
-## 原因候補
-
-以下のCSSが原因の可能性があります。
-
-```css
-.sidebarSectionHeader {
-  border-bottom: 1px solid ...
-}
-
-.sidebarSubsectionHeader {
-  border-bottom: 1px solid ...
-}
+```text
+グリッド設定
+タブ色設定
 ```
 
-この線が本文先頭のボタン/ラベルと近すぎて重なって見えています。
+しかし、これらは変更対象カテゴリに対する設定なので、**カテゴリ変更** の項目内へ入れてください。
 
 ---
 
-## 修正方針
+## 変更後仕様
 
-左サイドバーの見出し直下の `border-bottom` を削除してください。
-セクション全体の枠線は残して構いません。
+カテゴリ管理内の構造を以下のようにしてください。
 
-## CSS修正
+```text
+カテゴリ管理
+  カテゴリ追加
+    - 新規カテゴリ名
+    - 追加ボタン
 
-以下を追加または既存CSSを修正してください。
+  カテゴリ変更
+    - 変更対象カテゴリ
+    - カテゴリ名変更
+    - 列数
+    - 行数
+    - タブ色
+    - 更新/保存系ボタン
+    - カテゴリ削除
+```
 
-```css
-.sidebar .sidebarSectionHeader,
-.sidebar .sidebarSubsectionHeader {
-  border-bottom: none;
+つまり、以下の独立サブセクションは不要です。
+
+```text
+グリッド設定
+タブ色設定
+```
+
+これらを削除し、中身を「カテゴリ変更」内へ移動してください。
+
+---
+
+## JSX 方針
+
+現在のような構造になっている場合:
+
+```jsx
+<details className="sidebarSubsection">
+  <summary>カテゴリ変更</summary>
+  ...
+</details>
+
+<details className="sidebarSubsection">
+  <summary>グリッド設定</summary>
+  ...
+</details>
+
+<details className="sidebarSubsection">
+  <summary>タブ色設定</summary>
+  ...
+</details>
+```
+
+以下のように変更してください。
+
+```jsx
+<details className="sidebarSubsection" open>
+  <summary className="sidebarSubsectionHeader">
+    <span>カテゴリ変更</span>
+    <span className="sidebarSectionChevron">›</span>
+  </summary>
+
+  <div className="sidebarSubsectionBody">
+    {/* 変更対象カテゴリ */}
+    {/* カテゴリ名変更 */}
+
+    {/* グリッド設定をここへ移動 */}
+    {/* 列数 */}
+    {/* 行数 */}
+
+    {/* タブ色設定をここへ移動 */}
+    {/* タブ色 */}
+
+    {/* 更新/保存系ボタン */}
+
+    {/* カテゴリ削除は最下段 */}
+  </div>
+</details>
+```
+
+---
+
+## カテゴリ削除ボタン位置
+
+前回指定どおり、カテゴリ削除はカテゴリ変更内の最下段にしてください。
+
+推奨順:
+
+```text
+変更対象カテゴリ
+カテゴリ名
+列数
+行数
+タブ色
+保存/更新系操作
+カテゴリ削除
+```
+
+削除ボタンは danger 表現を維持してください。
+
+---
+
+## 折りたたみ状態
+
+`settings.json` に `categoryManageSections` のような折りたたみ状態を保存している場合、独立していた `grid` と `color` は不要になります。
+
+以下のように整理してください。
+
+```json
+{
+  "ui": {
+    "categoryManageSections": {
+      "add": true,
+      "edit": true
+    }
+  }
 }
 ```
 
-もし `details[open]` 時だけ border が追加されている場合も削除してください。
+ただし、既存 settings.json に `grid` / `color` が残っていてもアプリが落ちないようにしてください。
+
+---
+
+## CSS
+
+既存の `sidebarSubsection` スタイルをそのまま使って構いません。
+ただし、カテゴリ変更内が長くなるため、項目間の余白を少し整理してください。
 
 ```css
-.sidebar .sidebarSection[open] .sidebarSectionHeader,
-.sidebar .sidebarSubsection[open] .sidebarSubsectionHeader {
-  border-bottom: none;
-}
-```
-
-## 余白調整
-
-線を消した後、本文との間隔が詰まりすぎる場合は、body側に余白を付けてください。
-
-```css
-.sidebarSectionBody,
 .sidebarSubsectionBody {
-  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 ```
 
-ただし、既に十分な余白がある場合は不要です。
+既に同等のCSSがある場合は重複追加しないでください。
 
 ---
 
 ## 完了条件
 
-* 左サイドバーの項目名直下の線が消えている
-* カテゴリ管理内の項目名直下の線も消えている
-* 最初のボタン/ラベルと線が重ならない
-* セクション外枠は維持されている
-* 左サイドバー全体の視認性は落ちていない
+以下を実画面で確認してください。
+
+* カテゴリ管理内に「グリッド設定」という独立項目がない
+* カテゴリ管理内に「タブ色設定」という独立項目がない
+* 列数/行数は「カテゴリ変更」内にある
+* タブ色は「カテゴリ変更」内にある
+* 変更対象カテゴリの選択は維持される
+* 列数変更が動く
+* 行数変更が動く
+* タブ色変更が動く
+* カテゴリ削除はカテゴリ変更内の最下段にある
+* カテゴリ追加は独立したまま
 
 ---
 
@@ -332,27 +410,26 @@ JSX例:
 ```text
 対応結果:
 
-1. 設定折りたたみ開き切り修正
-- settingsSectionBody max-height解除: OK / NG
-- settingsContent 縦スクロール: OK / NG
-- セル設定が最後まで表示される: OK / NG
-- アイコン設定が最後まで表示される: OK / NG
+1. ホバーテキスト全文スクロール
+- main側の20行制限削除: OK / NG
+- renderer側の行数切り詰め削除: OK / NG
+- pre部分 overflow-y:auto: OK / NG
+- 30行以上のtxtでスクロール確認: OK / NG
+- 30行以上のmdでスクロール確認: OK / NG
+- 16KB上限維持: OK / NG
 
-2. ホバーテキストスクロール対応
-- textHoverPreview flex化: OK / NG
-- pre部分 overflow:auto: OK / NG
-- ホイール伝播抑制: OK / NG
-- 長文スクロール確認: OK / NG
-
-3. 左サイドバー見出し直下線削除
-- sidebarSectionHeader border-bottom削除: OK / NG
-- sidebarSubsectionHeader border-bottom削除: OK / NG
-- 外枠維持: OK / NG
-- 重なり解消: OK / NG
+2. カテゴリ管理構造整理
+- グリッド設定をカテゴリ変更内へ移動: OK / NG
+- タブ色設定をカテゴリ変更内へ移動: OK / NG
+- 独立したグリッド設定項目削除: OK / NG
+- 独立したタブ色設定項目削除: OK / NG
+- カテゴリ削除を最下段に維持: OK / NG
+- 既存操作維持: OK / NG
 
 変更ファイル:
-- src/styles.css:
 - src/App.jsx:
+- src/styles.css:
+- electron/main.cjs:
 - その他:
 
 確認:

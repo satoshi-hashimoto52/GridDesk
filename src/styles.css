@@ -598,7 +598,8 @@ label {
 }
 
 .sidebarSubsectionBody {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 9px;
   padding: 8px 9px 10px;
 }
@@ -1097,7 +1098,7 @@ label {
   z-index: 2147483646;
   width: 420px;
   max-width: min(520px, calc(100vw - 24px));
-  max-height: min(520px, calc(100vh - 24px));
+  max-height: min(560px, calc(100vh - 24px));
   display: flex;
   flex-direction: column;
   border: 1px solid var(--gd-border-subtle);
@@ -1128,12 +1129,14 @@ label {
 }
 
 .textHoverPreview pre {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   max-height: none;
+  height: auto;
   margin: 0;
   padding: 10px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: auto;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 11px;
   line-height: 1.35;

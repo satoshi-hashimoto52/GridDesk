@@ -46,9 +46,7 @@ const defaultSettings = {
     },
     categoryManageSections: {
       add: true,
-      edit: true,
-      grid: true,
-      color: true
+      edit: true
     },
     settingsSections: {
       display: true,
@@ -926,20 +924,6 @@ function App() {
                             追加カテゴリ名
                             <input value={genreDraft.name} onChange={(event) => setGenreDraft({ ...genreDraft, name: event.target.value })} />
                           </label>
-                          <div className="fieldGrid">
-                            <label>
-                              列数
-                              <input type="number" min="1" max="20" value={genreDraft.cols} onChange={(event) => setGenreDraft({ ...genreDraft, cols: event.target.value })} />
-                            </label>
-                            <label>
-                              行数
-                              <input type="number" min="1" max="20" value={genreDraft.rows} onChange={(event) => setGenreDraft({ ...genreDraft, rows: event.target.value })} />
-                            </label>
-                          </div>
-                          <label>
-                            タブ色
-                            <input type="color" value={genreDraft.accentColor} onChange={(event) => setGenreDraft({ ...genreDraft, accentColor: event.target.value })} />
-                          </label>
                           <button className="primary" onClick={createGenre}><Plus size={17} />カテゴリ追加</button>
                         </div>
                       </details>
@@ -966,58 +950,28 @@ function App() {
                                 カテゴリ名
                                 <input value={selectedEditGenre.name} onChange={(event) => updateGenre({ id: selectedEditGenre.id, name: event.target.value })} />
                               </label>
+                              <div className="fieldGrid">
+                                <label>
+                                  列数
+                                  <input type="number" min="1" max="20" value={selectedEditGenre.cols} onChange={(event) => updateGenre({ id: selectedEditGenre.id, cols: event.target.value })} />
+                                </label>
+                                <label>
+                                  行数
+                                  <input type="number" min="1" max="20" value={selectedEditGenre.rows} onChange={(event) => updateGenre({ id: selectedEditGenre.id, rows: event.target.value })} />
+                                </label>
+                              </div>
+                              <label>
+                                タブ色
+                                <input
+                                  type="color"
+                                  value={selectedEditGenre.accent_color || "#2f7d68"}
+                                  onChange={(event) => updateGenre({ id: selectedEditGenre.id, accentColor: event.target.value })}
+                                />
+                              </label>
                               <div className="categoryDeleteArea">
                                 <button className="danger categoryDeleteButton" onClick={deleteGenre}><Trash2 size={17} />カテゴリ削除</button>
                               </div>
                             </>
-                          )}
-                        </div>
-                      </details>
-
-                      <details
-                        className="sidebarSubsection"
-                        open={categoryManageSectionOpen("grid")}
-                        onToggle={(event) => updateCategoryManageSection("grid", event.currentTarget.open)}
-                      >
-                        <summary className="sidebarSubsectionHeader">
-                          <span>グリッド設定</span>
-                          <span className="sidebarSectionChevron">›</span>
-                        </summary>
-                        <div className="sidebarSubsectionBody">
-                          {selectedEditGenre && (
-                            <div className="fieldGrid">
-                              <label>
-                                列数
-                                <input type="number" min="1" max="20" value={selectedEditGenre.cols} onChange={(event) => updateGenre({ id: selectedEditGenre.id, cols: event.target.value })} />
-                              </label>
-                              <label>
-                                行数
-                                <input type="number" min="1" max="20" value={selectedEditGenre.rows} onChange={(event) => updateGenre({ id: selectedEditGenre.id, rows: event.target.value })} />
-                              </label>
-                            </div>
-                          )}
-                        </div>
-                      </details>
-
-                      <details
-                        className="sidebarSubsection"
-                        open={categoryManageSectionOpen("color")}
-                        onToggle={(event) => updateCategoryManageSection("color", event.currentTarget.open)}
-                      >
-                        <summary className="sidebarSubsectionHeader">
-                          <span>タブ色設定</span>
-                          <span className="sidebarSectionChevron">›</span>
-                        </summary>
-                        <div className="sidebarSubsectionBody">
-                          {selectedEditGenre && (
-                            <label>
-                              タブ色
-                              <input
-                                type="color"
-                                value={selectedEditGenre.accent_color || "#2f7d68"}
-                                onChange={(event) => updateGenre({ id: selectedEditGenre.id, accentColor: event.target.value })}
-                              />
-                            </label>
                           )}
                         </div>
                       </details>

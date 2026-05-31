@@ -46,9 +46,7 @@ const defaultSettings = {
     },
     categoryManageSections: {
       add: true,
-      edit: true,
-      grid: true,
-      color: true
+      edit: true
     },
     settingsSections: {
       display: true,
@@ -520,12 +518,10 @@ ipcMain.handle("file:previewText", async (_event, targetPath) => {
       if (chunk.includes(0)) return { ok: false, skipped: true, reason: "バイナリファイルの可能性があります" };
 
       const text = chunk.toString("utf8");
-      const allLines = text.split(/\r?\n/);
-      const lines = allLines.slice(0, 20);
       return {
         ok: true,
-        text: lines.join("\n"),
-        truncated: stat.size > maxBytes || allLines.length > 20,
+        text,
+        truncated: stat.size > maxBytes,
         size: stat.size,
         ext
       };
