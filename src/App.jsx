@@ -317,7 +317,10 @@ function App() {
   const genreListRef = useRef(null);
   const fitWindowTimer = useRef(null);
   const hoverPreviewTimerRef = useRef(null);
+  const hoverPreviewCloseTimerRef = useRef(null);
   const hoverPreviewRequestRef = useRef(0);
+  const isHoveringIconRef = useRef(false);
+  const isHoveringPreviewRef = useRef(false);
   const previewCacheRef = useRef(new Map());
   const [workMode, setWorkMode] = useState(WORK_MODES.REGISTER);
   const [dragTargetCell, setDragTargetCell] = useState(null);
@@ -337,6 +340,7 @@ function App() {
       if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
       if (fitWindowTimer.current) clearTimeout(fitWindowTimer.current);
       if (hoverPreviewTimerRef.current) clearTimeout(hoverPreviewTimerRef.current);
+      if (hoverPreviewCloseTimerRef.current) clearTimeout(hoverPreviewCloseTimerRef.current);
     };
   }, []);
 
@@ -767,21 +771,39 @@ function App() {
     updateSettings({ ui: { categoryManageSections: { [key]: open } } });
   }
 
+  function scheduleCloseHoverPreview() {
+    if (hoverPreviewCloseTimerRef.current) {
+      clearTimeout(hoverPreviewCloseTimerRef.current);
+    }
+
+    hoverPreviewCloseTimerRef.current = window.setTimeout(() => {
+      if (!isHoveringIconRef.current && !isHoveringPreviewRef.current) {
+        setHoverPreview(null);
+      }
+    }, 180);
+  }
+
   function handleIconHoverStart(event, item) {
+    isHoveringIconRef.current = true;
+    if (hoverPreviewCloseTimerRef.current) {
+      clearTimeout(hoverPreviewCloseTimerRef.current);
+      hoverPreviewCloseTimerRef.current = null;
+    }
+    setHoverPreview(null);
     if (!item?.path) return;
     const anchorRect = event.currentTarget.getBoundingClientRect();
     const requestId = hoverPreviewRequestRef.current + 1;
     hoverPreviewRequestRef.current = requestId;
     const previewPosition = {
-      x: Math.max(14, Math.min(anchorRect.right + 10, window.innerWidth - 474)),
-      y: Math.max(14, Math.min(anchorRect.top, window.innerHeight - 434))
+      x: Math.max(14, Math.min(anchorRect.right + 10, window.innerWidth - 434)),
+      y: Math.max(14, Math.min(anchorRect.top, window.innerHeight - 534))
     };
     if (hoverPreviewTimerRef.current) clearTimeout(hoverPreviewTimerRef.current);
     hoverPreviewTimerRef.current = window.setTimeout(async () => {
       const targetPath = item.path;
       const cached = previewCacheRef.current.get(targetPath);
       if (cached) {
-        if (cached.ok && hoverPreviewRequestRef.current === requestId) {
+        if (cached.ok && hoverPreviewRequestRef.current === requestId && (isHoveringIconRef.current || isHoveringPreviewRef.current)) {
           setHoverPreview({ ...previewPosition, item, ...cached });
         }
         return;
@@ -790,7 +812,7 @@ function App() {
       try {
         const result = await api.previewTextFile?.(targetPath);
         previewCacheRef.current.set(targetPath, result);
-        if (result?.ok && hoverPreviewRequestRef.current === requestId) {
+        if (result?.ok && hoverPreviewRequestRef.current === requestId && (isHoveringIconRef.current || isHoveringPreviewRef.current)) {
           setHoverPreview({ ...previewPosition, item, ...result });
         }
       } catch (error) {
@@ -800,12 +822,25 @@ function App() {
   }
 
   function handleIconHoverEnd() {
-    hoverPreviewRequestRef.current += 1;
+    isHoveringIconRef.current = false;
     if (hoverPreviewTimerRef.current) {
       clearTimeout(hoverPreviewTimerRef.current);
       hoverPreviewTimerRef.current = null;
     }
-    setHoverPreview(null);
+    scheduleCloseHoverPreview();
+  }
+
+  function handlePreviewHoverStart() {
+    isHoveringPreviewRef.current = true;
+    if (hoverPreviewCloseTimerRef.current) {
+      clearTimeout(hoverPreviewCloseTimerRef.current);
+      hoverPreviewCloseTimerRef.current = null;
+    }
+  }
+
+  function handlePreviewHoverEnd() {
+    isHoveringPreviewRef.current = false;
+    scheduleCloseHoverPreview();
   }
 
   const selectedEditGenre = genresById.get(String(editGenreId));
@@ -1136,7 +1171,13 @@ function App() {
 
       {message && <div className="toast" onClick={() => setMessage("")}>{message}</div>}
       {hoverPreview && createPortal(
-        <div className="textHoverPreview" style={{ left: hoverPreview.x, top: hoverPreview.y }}>
+        <div
+          className="textHoverPreview"
+          style={{ left: hoverPreview.x, top: hoverPreview.y }}
+          onMouseEnter={handlePreviewHoverStart}
+          onMouseLeave={handlePreviewHoverEnd}
+          onWheel={(event) => event.stopPropagation()}
+        >
           <div className="textHoverPreviewTitle">{hoverPreview.item?.name || hoverPreview.item?.path}</div>
           <pre>{hoverPreview.text}</pre>
           {hoverPreview.truncated && <div className="textHoverPreviewFooter">先頭のみ表示しています</div>}
@@ -1273,6 +1314,13 @@ function Cell({
   const extensionLabel = getExtensionLabel(item);
   const showTypeBadge = settings?.ui?.cell?.showTypeBadge ?? true;
   const showFileName = settings?.ui?.cell?.showFileName ?? true;
+  const iconCardClassName = [
+    "launcherItem",
+    "iconCard",
+    deleteCellMode ? "deleteMode" : "",
+    showTypeBadge ? "hasTypeBadge" : "noTypeBadge",
+    showFileName ? "hasFileName" : "noFileName"
+  ].filter(Boolean).join(" ");
   const [menu, setMenu] = useState(null);
 
   function handleItemContextMenu(event) {
@@ -1337,7 +1385,7 @@ function Cell({
     >
       {item && !disabled && (
         <button
-          className={`launcherItem iconCard ${deleteCellMode ? "deleteMode" : ""}`}
+          className={iconCardClassName}
           style={{ "--gd-item-icon-bg": iconBackground }}
           draggable
           onContextMenu={handleItemContextMenu}
@@ -1355,7 +1403,7 @@ function Cell({
           onDragEnd={() => onDragTargetChange(false)}
         >
           {showTypeBadge && extensionLabel && <span className="cellTypeBadge">{extensionLabel}</span>}
-          <span className="launcherGlyph" aria-hidden="true">
+          <span className="launcherGlyph iconVisualWrap" aria-hidden="true">
             <LineIcon name={iconName} color={iconColor} size={30} />
           </span>
           {showFileName && <span className="itemName">{getDisplayNameWithoutExtension(item)}</span>}

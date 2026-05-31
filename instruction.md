@@ -1,455 +1,329 @@
 
-# GridDesk 修正指示：セル表示中央寄せ・テキストホバープレビュー保持
+# GridDesk 修正指示：設定折りたたみ高さ・ホバーテキストスクロール・サイドバー見出し線削除
 
-今回は以下の2点だけ修正してください。
+今回は以下の3点だけ修正してください。
 
-1. セル設定で「種別バッジ」または「ファイル名表示」をOFFにした時、残った表示要素がアイコンカード内で中央に配置されるようにする
-2. テキストホバープレビューは、プレビュー表示領域からカーソルを外に出さない限り表示したままにする
+1. 設定内の折りたたみ項目を開いた時に、内容が途中で切れず最後まで開くようにする
+2. テキストホバープレビューをスクロールで全文閲覧できるようにする
+3. 左サイドバー各項目の項目名直下の線が最初のボタン/ラベルと重なるため、その線を削除する
 
 ## 禁止事項
 
 今回は以下を触らないでください。
 
-* ファイル/フォルダ起動処理
-* 右クリックメニュー
-* 削除モード
-* セル登録ロジック
-* DBスキーマ
-* 背景透過/ブラー
-* セル設定の項目追加
-* カテゴリ管理
-* ウィンドウ幅自動フィット
-* Electron main/preload の大規模変更
+- ファイル/フォルダ起動処理
+- 右クリックメニュー
+- 削除モード
+- セル登録ロジック
+- DBスキーマ
+- 背景透過/ブラーの設定値
+- カテゴリ管理ロジック
+- ウィンドウ幅自動フィット
+- テキストプレビューの読み込み上限
+- テキストプレビューの対象拡張子
 
 ---
 
-# 1. 種別バッジ/ファイル名表示OFF時の中央寄せ
+# 1. 設定内の折りたたみ項目が開き切らない問題
+
+## 症状
+
+設定画面内の `<details>` 形式の折りたたみ項目を開いた時、内容が途中で切れたり、最後まで開き切らないことがあります。
+
+## 原因候補
+
+以下のようなCSSが原因の可能性があります。
+
+```css
+.settingsSection {
+  overflow: hidden;
+  max-height: ...
+}
+
+.settingsSectionBody {
+  max-height: ...
+  overflow: hidden;
+}
+
+.settingsModal {
+  overflow: hidden;
+}
+```
+
+`details[open]` の中身が、親要素の `max-height` や `overflow: hidden` によって切れている可能性があります。
+
+---
+
+## 修正方針
+
+設定モーダル全体はスクロール可能にし、各設定セクションは開いた分だけ自然な高さになるようにしてください。
+
+## CSS修正
+
+`src/styles.css` の設定画面関連CSSを確認し、以下を反映してください。
+
+```css
+.settingsModal,
+.settingsPanel,
+.settingsContent {
+  min-height: 0;
+}
+
+.settingsModal {
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.settingsContent {
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100vh - 96px);
+  padding-right: 6px;
+}
+
+.settingsSection {
+  overflow: visible;
+}
+
+.settingsSection[open] {
+  overflow: visible;
+}
+
+.settingsSectionBody {
+  overflow: visible;
+  max-height: none;
+  height: auto;
+}
+```
+
+既存クラス名が異なる場合は、実際に使われている設定モーダルのクラスに合わせてください。
+
+---
+
+## 注意
+
+`settingsSection` にアニメーション目的で `max-height` を使っている場合は、一旦削除してください。
+今回の優先は、開いた内容が確実に見えることです。
+
+削除対象例:
+
+```css
+.settingsSectionBody {
+  max-height: 0;
+  transition: max-height ...
+}
+
+.settingsSection[open] .settingsSectionBody {
+  max-height: 300px;
+}
+```
+
+このような固定 `max-height` は、内容が増えると切れる原因になります。
+
+---
+
+## 完了条件
+
+* 設定内の各セクションを開いた時、内容が最後まで表示される
+* セル設定を開いても途中で切れない
+* アイコン設定を開いても途中で切れない
+* 設定モーダル全体は必要に応じて縦スクロールできる
+* 開いた設定項目が他の項目に重ならない
+
+---
+
+# 2. テキストホバープレビューをスクロールで全文閲覧可能にする
 
 ## 現状
 
-セル設定で以下をOFFにした時、アイコンカード内の残った表示要素の位置が不自然になります。
+テキストホバープレビューは表示されるが、内容が長い場合に全文を閲覧できません。
 
-* 種別バッジ表示OFF
-* ファイル名表示OFF
+## 変更後仕様
 
-例えば、
+ホバーテキスト表示領域内でスクロールして、読み込んだ範囲の全文を閲覧できるようにしてください。
 
-* 種別バッジのみOFF
-* ファイル名のみOFF
-* 両方OFF
-
-の状態で、アイコンや残ったラベルが上寄り・下寄りになっている可能性があります。
-
-## 期待仕様
-
-表示されている要素だけで、アイコンカード内の中央にまとまって見えるようにしてください。
-
-### 表示状態ごとの期待
-
-| 種別バッジ | ファイル名 | 期待表示                            |
-| ----- | ----- | ------------------------------- |
-| ON    | ON    | 既存に近い表示。バッジは左上、アイコンと名前はバランスよく配置 |
-| OFF   | ON    | アイコン + ファイル名が中央寄せ               |
-| ON    | OFF   | バッジは左上、アイコンは中央寄せ                |
-| OFF   | OFF   | アイコンのみ完全中央寄せ                    |
+重要:
+読み込み上限は現状のままで構いません。
+今回は **表示領域内でスクロール可能にする** ことが目的です。
 
 ---
 
-## 実装方針
+## CSS修正
 
-アイコンカードに状態別クラスを付けてください。
+現在 `.textHoverPreview` や `.textHoverPreview pre` に以下のような指定がある可能性があります。
 
-```jsx
-const showTypeBadge = settings?.ui?.cell?.showTypeBadge ?? true;
-const showFileName = settings?.ui?.cell?.showFileName ?? true;
-
-const iconCardClassName = [
-  "iconCard",
-  deleteCellMode ? "deleteMode" : "",
-  showTypeBadge ? "hasTypeBadge" : "noTypeBadge",
-  showFileName ? "hasFileName" : "noFileName"
-].filter(Boolean).join(" ");
+```css
+overflow: hidden;
+max-height: 320px;
 ```
+
+これを、プレビュー全体または `pre` 部分でスクロール可能にしてください。
+
+推奨:
+
+```css
+.textHoverPreview {
+  position: fixed;
+  z-index: 2147483646;
+  width: 420px;
+  max-width: min(520px, calc(100vw - 24px));
+  max-height: min(520px, calc(100vh - 24px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.textHoverPreviewTitle {
+  flex-shrink: 0;
+}
+
+.textHoverPreview pre {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overscroll-behavior: contain;
+}
+
+.textHoverPreviewFooter {
+  flex-shrink: 0;
+}
+```
+
+## スクロールバー見た目
+
+必要なら以下も追加してください。
+
+```css
+.textHoverPreview pre::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.textHoverPreview pre::-webkit-scrollbar-thumb {
+  background: rgba(80, 90, 100, 0.45);
+  border-radius: 999px;
+}
+
+.textHoverPreview pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+```
+
+---
+
+## イベント注意
+
+プレビュー内でホイールスクロールしても、背後の中央セル領域がスクロールしすぎないように、必要なら `onWheel` で伝播を止めてください。
 
 JSX例:
 
 ```jsx
 <div
-  className={iconCardClassName}
-  onClick={(event) => handleIconClick(event, item)}
-  onDoubleClick={(event) => handleIconDoubleClick(event, item)}
-  onContextMenu={(event) => handleItemContextMenu(event, item)}
-  onMouseEnter={(event) => handleIconHoverStart(event, item)}
-  onMouseLeave={handleIconHoverEnd}
+  className="textHoverPreview"
+  onMouseEnter={...}
+  onMouseLeave={...}
+  onWheel={(event) => event.stopPropagation()}
 >
-  {showTypeBadge && (
-    <div className="cellTypeBadge">
-      {getExtensionLabel(item)}
-    </div>
-  )}
-
-  <div className="iconVisualWrap">
-    <LineIcon
-      name={item.icon_name ?? iconSetting.icon}
-      color={item.icon_color ?? iconSetting.strokeColor}
-      size={settings?.ui?.cell?.iconSize ?? 32}
-    />
-  </div>
-
-  {showFileName && (
-    <div className="iconLabel">
-      {getDisplayNameWithoutExtension(item)}
-    </div>
-  )}
-</div>
-```
-
-既存のクラス名・構造が異なる場合は、現在の実装に合わせてください。
-
----
-
-## CSS修正
-
-アイコンカード内を flex レイアウトに整理してください。
-
-```css
-.iconCard,
-.launcherItem,
-.itemCard {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  box-sizing: border-box;
-}
-```
-
-種別バッジは従来通り左上固定で構いません。
-
-```css
-.cellTypeBadge {
-  position: absolute;
-  top: 6px;
-  left: 7px;
-  z-index: 2;
-  pointer-events: none;
-}
-```
-
-アイコン本体のラッパーを中央配置してください。
-
-```css
-.iconVisualWrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-```
-
-ラベル表示も中央にしてください。
-
-```css
-.iconLabel,
-.itemName,
-.launcherItemName {
-  text-align: center;
-  max-width: 100%;
-  line-height: 1.2;
-}
-```
-
----
-
-## 状態別の微調整
-
-### ファイル名あり
-
-```css
-.iconCard.hasFileName,
-.launcherItem.hasFileName,
-.itemCard.hasFileName {
-  justify-content: center;
-}
-```
-
-### ファイル名なし
-
-ファイル名がない場合は、アイコンを中央に寄せてください。
-
-```css
-.iconCard.noFileName,
-.launcherItem.noFileName,
-.itemCard.noFileName {
-  justify-content: center;
-}
-
-.iconCard.noFileName .iconVisualWrap,
-.launcherItem.noFileName .iconVisualWrap,
-.itemCard.noFileName .iconVisualWrap {
-  margin: 0;
-}
-```
-
-### バッジなし・ファイル名なし
-
-アイコンのみ完全中央にしてください。
-
-```css
-.iconCard.noTypeBadge.noFileName,
-.launcherItem.noTypeBadge.noFileName,
-.itemCard.noTypeBadge.noFileName {
-  justify-content: center;
-  align-items: center;
-}
-```
-
-### バッジあり・ファイル名なし
-
-バッジは左上、アイコンは中央で構いません。
-
-```css
-.iconCard.hasTypeBadge.noFileName,
-.launcherItem.hasTypeBadge.noFileName,
-.itemCard.hasTypeBadge.noFileName {
-  justify-content: center;
-}
 ```
 
 ---
 
 ## 完了条件
 
-以下を実画面で確認してください。
-
-* 種別バッジON / ファイル名ONで既存表示が崩れない
-* 種別バッジOFF / ファイル名ONでアイコン+名前が中央寄せされる
-* 種別バッジON / ファイル名OFFでアイコンが中央寄せされる
-* 種別バッジOFF / ファイル名OFFでアイコンのみ完全中央になる
-* セル幅・セル高さを小さくしても極端にズレない
+* 長い `.txt` や `.md` のプレビュー内でスクロールできる
+* プレビュー領域上にカーソルがある間は消えない
+* スクロールしても背面のセル領域が不自然にスクロールしない
+* 読み込み上限は現状維持
+* UIが重くならない
 
 ---
 
-# 2. テキストホバープレビューを、プレビュー領域から外れるまで表示保持する
+# 3. 左サイドバー各項目名直下の線を削除する
 
-## 現状
+## 症状
 
-テキスト系ファイルのホバープレビューは、アイコンからマウスが離れるとすぐ消えます。
+左サイドバーの各項目で、項目名直下の線が最初のボタンまたはラベルと重なっています。
 
-## 変更後仕様
+対象例:
 
-以下のようにしてください。
+* カテゴリ管理
+* セル登録
+* 設定
+* カテゴリ管理内のサブセクション
+* 設定内サブセクションではなく、今回は左サイドバー側のみ
 
-1. アイコンにホバーする
-2. 少し遅れてテキストプレビューが表示される
-3. アイコンからプレビュー表示領域へマウスを移動しても消えない
-4. プレビュー表示領域からマウスが外れたら消える
-5. アイコンにもプレビューにも乗っていない状態になったら消える
+## 原因候補
 
-つまり、**ホバーしたテキスト表示領域からカーソルを外に出さない限りは表示したまま**にしてください。
+以下のCSSが原因の可能性があります。
 
----
+```css
+.sidebarSectionHeader {
+  border-bottom: 1px solid ...
+}
 
-## 実装方針
-
-アイコン領域とプレビュー領域の両方を hover 対象として扱ってください。
-
-以下の state / ref を追加または修正してください。
-
-```jsx
-const [hoverPreview, setHoverPreview] = useState(null);
-const hoverPreviewTimerRef = useRef(null);
-const hoverPreviewCloseTimerRef = useRef(null);
-const isHoveringIconRef = useRef(false);
-const isHoveringPreviewRef = useRef(false);
-```
-
----
-
-## 閉じる処理を遅延させる
-
-すぐ消すのではなく、短い遅延を入れて、プレビュー領域へ移動する時間を確保してください。
-
-```jsx
-function scheduleCloseHoverPreview() {
-  if (hoverPreviewCloseTimerRef.current) {
-    window.clearTimeout(hoverPreviewCloseTimerRef.current);
-  }
-
-  hoverPreviewCloseTimerRef.current = window.setTimeout(() => {
-    if (!isHoveringIconRef.current && !isHoveringPreviewRef.current) {
-      setHoverPreview(null);
-    }
-  }, 180);
+.sidebarSubsectionHeader {
+  border-bottom: 1px solid ...
 }
 ```
 
----
-
-## アイコン側の hover start / end
-
-```jsx
-function handleIconHoverStart(event, item) {
-  isHoveringIconRef.current = true;
-
-  if (hoverPreviewCloseTimerRef.current) {
-    window.clearTimeout(hoverPreviewCloseTimerRef.current);
-    hoverPreviewCloseTimerRef.current = null;
-  }
-
-  if (!item?.path) return;
-
-  const anchorRect = event.currentTarget.getBoundingClientRect();
-
-  if (hoverPreviewTimerRef.current) {
-    window.clearTimeout(hoverPreviewTimerRef.current);
-  }
-
-  hoverPreviewTimerRef.current = window.setTimeout(async () => {
-    const path = item.path;
-
-    if (previewCacheRef.current.has(path)) {
-      const cached = previewCacheRef.current.get(path);
-
-      if (cached?.ok) {
-        setHoverPreview({
-          x: anchorRect.right + 10,
-          y: anchorRect.top,
-          item,
-          ...cached
-        });
-      }
-
-      return;
-    }
-
-    try {
-      const result = await window.griddesk?.previewTextFile?.(path);
-
-      previewCacheRef.current.set(path, result);
-
-      if (result?.ok) {
-        setHoverPreview({
-          x: anchorRect.right + 10,
-          y: anchorRect.top,
-          item,
-          ...result
-        });
-      }
-    } catch (error) {
-      console.debug("Text preview failed", error);
-    }
-  }, 400);
-}
-```
-
-```jsx
-function handleIconHoverEnd() {
-  isHoveringIconRef.current = false;
-
-  if (hoverPreviewTimerRef.current) {
-    window.clearTimeout(hoverPreviewTimerRef.current);
-    hoverPreviewTimerRef.current = null;
-  }
-
-  scheduleCloseHoverPreview();
-}
-```
+この線が本文先頭のボタン/ラベルと近すぎて重なって見えています。
 
 ---
 
-## プレビュー側の mouse enter / leave
+## 修正方針
 
-React Portal で表示している `.textHoverPreview` に以下を追加してください。
-
-```jsx
-{textHoverPreview &&
-  createPortal(
-    <div
-      className="textHoverPreview"
-      style={{
-        left: hoverPreview.x,
-        top: hoverPreview.y
-      }}
-      onMouseEnter={() => {
-        isHoveringPreviewRef.current = true;
-
-        if (hoverPreviewCloseTimerRef.current) {
-          window.clearTimeout(hoverPreviewCloseTimerRef.current);
-          hoverPreviewCloseTimerRef.current = null;
-        }
-      }}
-      onMouseLeave={() => {
-        isHoveringPreviewRef.current = false;
-        scheduleCloseHoverPreview();
-      }}
-    >
-      ...
-    </div>,
-    document.body
-  )}
-```
-
-実際の state 名が `hoverPreview` なら、`textHoverPreview` ではなく既存名に合わせてください。
-
----
+左サイドバーの見出し直下の `border-bottom` を削除してください。
+セクション全体の枠線は残して構いません。
 
 ## CSS修正
 
-現在 `.textHoverPreview` に `pointer-events: none;` が設定されている場合、プレビュー領域の hover を拾えません。
-
-これを変更してください。
+以下を追加または既存CSSを修正してください。
 
 ```css
-.textHoverPreview {
-  pointer-events: auto;
+.sidebar .sidebarSectionHeader,
+.sidebar .sidebarSubsectionHeader {
+  border-bottom: none;
 }
 ```
 
-ただし、プレビュー内でテキスト選択やクリックが不要なら、見た目だけ維持で構いません。
+もし `details[open]` 時だけ border が追加されている場合も削除してください。
 
 ```css
-.textHoverPreview {
-  pointer-events: auto;
-  user-select: text;
+.sidebar .sidebarSection[open] .sidebarSectionHeader,
+.sidebar .sidebarSubsection[open] .sidebarSubsectionHeader {
+  border-bottom: none;
 }
 ```
 
----
+## 余白調整
 
-## メモリリーンアップ
+線を消した後、本文との間隔が詰まりすぎる場合は、body側に余白を付けてください。
 
-コンポーネント unmount 時に timer を掃除してください。
-
-```jsx
-useEffect(() => {
-  return () => {
-    if (hoverPreviewTimerRef.current) {
-      window.clearTimeout(hoverPreviewTimerRef.current);
-    }
-
-    if (hoverPreviewCloseTimerRef.current) {
-      window.clearTimeout(hoverPreviewCloseTimerRef.current);
-    }
-  };
-}, []);
+```css
+.sidebarSectionBody,
+.sidebarSubsectionBody {
+  padding-top: 8px;
+}
 ```
+
+ただし、既に十分な余白がある場合は不要です。
 
 ---
 
 ## 完了条件
 
-以下を実画面で確認してください。
-
-* テキスト系ファイルにホバーするとプレビューが出る
-* アイコンからプレビュー領域へカーソルを移動しても消えない
-* プレビュー領域上にカーソルがある間は表示され続ける
-* プレビュー領域からカーソルを外すと消える
-* アイコンから離れてプレビューにも乗らない場合は消える
-* フォルダやPDFなど非対象ファイルでは表示されない
-* 動作が重くならない
+* 左サイドバーの項目名直下の線が消えている
+* カテゴリ管理内の項目名直下の線も消えている
+* 最初のボタン/ラベルと線が重ならない
+* セクション外枠は維持されている
+* 左サイドバー全体の視認性は落ちていない
 
 ---
 
@@ -458,24 +332,27 @@ useEffect(() => {
 ```text
 対応結果:
 
-1. セル表示中央寄せ
-- noTypeBadge / hasTypeBadge クラス追加: OK / NG
-- noFileName / hasFileName クラス追加: OK / NG
-- 種別バッジOFF時の中央寄せ: OK / NG
-- ファイル名OFF時の中央寄せ: OK / NG
-- 両方OFF時のアイコン完全中央: OK / NG
+1. 設定折りたたみ開き切り修正
+- settingsSectionBody max-height解除: OK / NG
+- settingsContent 縦スクロール: OK / NG
+- セル設定が最後まで表示される: OK / NG
+- アイコン設定が最後まで表示される: OK / NG
 
-2. テキストホバープレビュー保持
-- プレビュー領域の pointer-events:auto: OK / NG
-- アイコン hover と preview hover の両方を管理: OK / NG
-- close timer 追加: OK / NG
-- アイコンからプレビューへ移動しても保持: OK / NG
-- プレビューから外れると消える: OK / NG
-- timer cleanup: OK / NG
+2. ホバーテキストスクロール対応
+- textHoverPreview flex化: OK / NG
+- pre部分 overflow:auto: OK / NG
+- ホイール伝播抑制: OK / NG
+- 長文スクロール確認: OK / NG
+
+3. 左サイドバー見出し直下線削除
+- sidebarSectionHeader border-bottom削除: OK / NG
+- sidebarSubsectionHeader border-bottom削除: OK / NG
+- 外枠維持: OK / NG
+- 重なり解消: OK / NG
 
 変更ファイル:
-- src/App.jsx:
 - src/styles.css:
+- src/App.jsx:
 - その他:
 
 確認:
@@ -484,4 +361,3 @@ useEffect(() => {
 - node --check electron/preload.cjs:
 - npm start:
 ```
-
