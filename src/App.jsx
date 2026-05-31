@@ -314,8 +314,10 @@ function App() {
   const sidebarRef = useRef(null);
   const genreListRef = useRef(null);
   const fitWindowTimer = useRef(null);
+  const hoverPreviewRef = useRef(null);
   const hoverPreviewTimerRef = useRef(null);
   const hoverPreviewCloseTimerRef = useRef(null);
+  const hoverPreviewCopiedTimerRef = useRef(null);
   const hoverPreviewRequestRef = useRef(0);
   const isHoveringIconRef = useRef(false);
   const isHoveringPreviewRef = useRef(false);
@@ -324,6 +326,8 @@ function App() {
   const [dragTargetCell, setDragTargetCell] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [hoverPreview, setHoverPreview] = useState(null);
+  const [hoverPreviewSelection, setHoverPreviewSelection] = useState("");
+  const [hoverPreviewCopied, setHoverPreviewCopied] = useState(false);
   const [genreDraft, setGenreDraft] = useState({ name: "", cols: 6, rows: 3, accentColor: "#2f7d68", memo: "" });
   const [editGenreId, setEditGenreId] = useState("");
   const [itemForm, setItemForm] = useState(emptyForm());
@@ -339,6 +343,7 @@ function App() {
       if (fitWindowTimer.current) clearTimeout(fitWindowTimer.current);
       if (hoverPreviewTimerRef.current) clearTimeout(hoverPreviewTimerRef.current);
       if (hoverPreviewCloseTimerRef.current) clearTimeout(hoverPreviewCloseTimerRef.current);
+      if (hoverPreviewCopiedTimerRef.current) clearTimeout(hoverPreviewCopiedTimerRef.current);
     };
   }, []);
 
@@ -355,6 +360,37 @@ function App() {
       cellSettings: current?.ui?.cell
     });
   }, [settings]);
+
+  useEffect(() => {
+    if (!hoverPreview) return undefined;
+
+    function handleDocumentMouseDown(event) {
+      if (!hoverPreviewRef.current?.contains(event.target)) {
+        clearHoverPreviewSelection();
+      }
+    }
+
+    function handleDocumentKeyDown(event) {
+      if (event.key === "Escape") {
+        closeHoverPreview();
+      }
+    }
+
+    function handleSelectionChange() {
+      if (!window.getSelection?.()?.toString?.().trim()) {
+        clearHoverPreviewSelection();
+      }
+    }
+
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [hoverPreview]);
 
   useEffect(() => {
     const firstGenre = workspace?.genres?.[0]?.id;
@@ -769,6 +805,20 @@ function App() {
     updateSettings({ ui: { categoryManageSections: { [key]: open } } });
   }
 
+  function clearHoverPreviewSelection() {
+    setHoverPreviewSelection("");
+    setHoverPreviewCopied(false);
+    if (hoverPreviewCopiedTimerRef.current) {
+      clearTimeout(hoverPreviewCopiedTimerRef.current);
+      hoverPreviewCopiedTimerRef.current = null;
+    }
+  }
+
+  function closeHoverPreview() {
+    setHoverPreview(null);
+    clearHoverPreviewSelection();
+  }
+
   function scheduleCloseHoverPreview() {
     if (hoverPreviewCloseTimerRef.current) {
       clearTimeout(hoverPreviewCloseTimerRef.current);
@@ -776,7 +826,7 @@ function App() {
 
     hoverPreviewCloseTimerRef.current = window.setTimeout(() => {
       if (!isHoveringIconRef.current && !isHoveringPreviewRef.current) {
-        setHoverPreview(null);
+        closeHoverPreview();
       }
     }, 180);
   }
@@ -787,7 +837,7 @@ function App() {
       clearTimeout(hoverPreviewCloseTimerRef.current);
       hoverPreviewCloseTimerRef.current = null;
     }
-    setHoverPreview(null);
+    closeHoverPreview();
     if (!item?.path) return;
     const anchorRect = event.currentTarget.getBoundingClientRect();
     const requestId = hoverPreviewRequestRef.current + 1;
@@ -802,6 +852,7 @@ function App() {
       const cached = previewCacheRef.current.get(targetPath);
       if (cached) {
         if (cached.ok && hoverPreviewRequestRef.current === requestId && (isHoveringIconRef.current || isHoveringPreviewRef.current)) {
+          clearHoverPreviewSelection();
           setHoverPreview({ ...previewPosition, item, ...cached });
         }
         return;
@@ -811,6 +862,7 @@ function App() {
         const result = await api.previewTextFile?.(targetPath);
         previewCacheRef.current.set(targetPath, result);
         if (result?.ok && hoverPreviewRequestRef.current === requestId && (isHoveringIconRef.current || isHoveringPreviewRef.current)) {
+          clearHoverPreviewSelection();
           setHoverPreview({ ...previewPosition, item, ...result });
         }
       } catch (error) {
@@ -839,6 +891,60 @@ function App() {
   function handlePreviewHoverEnd() {
     isHoveringPreviewRef.current = false;
     scheduleCloseHoverPreview();
+  }
+
+  function isSelectionInsideHoverPreview() {
+    const selection = window.getSelection?.();
+    const root = hoverPreviewRef.current;
+    if (!selection || !root || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    return root.contains(range.startContainer) || root.contains(range.endContainer);
+  }
+
+  function updateHoverPreviewSelection() {
+    if (!isSelectionInsideHoverPreview()) {
+      clearHoverPreviewSelection();
+      return;
+    }
+
+    const selectedText = window.getSelection?.()?.toString?.() ?? "";
+    if (!selectedText.trim()) {
+      clearHoverPreviewSelection();
+      return;
+    }
+
+    setHoverPreviewSelection(selectedText);
+    setHoverPreviewCopied(false);
+  }
+
+  async function copyHoverPreviewSelection(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!hoverPreviewSelection) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(hoverPreviewSelection);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = hoverPreviewSelection;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      setHoverPreviewCopied(true);
+      if (hoverPreviewCopiedTimerRef.current) clearTimeout(hoverPreviewCopiedTimerRef.current);
+      hoverPreviewCopiedTimerRef.current = window.setTimeout(() => {
+        setHoverPreviewCopied(false);
+        hoverPreviewCopiedTimerRef.current = null;
+      }, 1200);
+    } catch (error) {
+      console.error("Failed to copy hover preview selection", error);
+      alert("コピーに失敗しました");
+    }
   }
 
   const selectedEditGenre = genresById.get(String(editGenreId));
@@ -1126,13 +1232,31 @@ function App() {
       {message && <div className="toast" onClick={() => setMessage("")}>{message}</div>}
       {hoverPreview && createPortal(
         <div
+          ref={hoverPreviewRef}
           className="textHoverPreview"
           style={{ left: hoverPreview.x, top: hoverPreview.y }}
           onMouseEnter={handlePreviewHoverStart}
           onMouseLeave={handlePreviewHoverEnd}
+          onMouseUp={updateHoverPreviewSelection}
+          onKeyUp={updateHoverPreviewSelection}
           onWheel={(event) => event.stopPropagation()}
         >
-          <div className="textHoverPreviewTitle">{hoverPreview.item?.name || hoverPreview.item?.path}</div>
+          <div className="textHoverPreviewTitle">
+            <span className="textHoverPreviewTitleText">{hoverPreview.item?.name || hoverPreview.item?.path}</span>
+            {hoverPreviewSelection && (
+              <button
+                type="button"
+                className="textHoverPreviewCopyButton"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={copyHoverPreviewSelection}
+              >
+                {hoverPreviewCopied ? "Copied" : "Copy"}
+              </button>
+            )}
+          </div>
           <pre>{hoverPreview.text}</pre>
           {hoverPreview.truncated && <div className="textHoverPreviewFooter">先頭のみ表示しています</div>}
         </div>,

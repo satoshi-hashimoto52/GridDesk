@@ -1120,12 +1120,42 @@ label {
   flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   font-size: 12px;
   font-weight: 700;
   border-bottom: 1px solid var(--gd-border-subtle);
+}
+
+.textHoverPreviewTitleText {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.textHoverPreviewCopyButton {
+  flex-shrink: 0;
+  border: 1px solid rgba(60, 70, 80, 0.34);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.26);
+  color: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.textHoverPreviewCopyButton:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.textHoverPreviewCopyButton:active {
+  transform: translateY(1px);
 }
 
 .textHoverPreview pre {
@@ -1143,6 +1173,10 @@ label {
   white-space: pre-wrap;
   word-break: break-word;
   overscroll-behavior: contain;
+}
+
+.textHoverPreview ::selection {
+  background: rgba(59, 130, 246, 0.35);
 }
 
 .textHoverPreviewFooter {

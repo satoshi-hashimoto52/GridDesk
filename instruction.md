@@ -1,9 +1,10 @@
-# GridDesk 修正指示：ホバーテキスト全文表示・カテゴリ管理内の項目整理
+ß
+# GridDesk 修正指示：ホバーテキスト選択時にコピーボタンを表示する
 
-今回は以下の2点だけ修正してください。
+今回は以下のみ対応してください。
 
-1. ホバーテキストがまだ一部表示になっているため、読み込んだ範囲を最後までスクロール閲覧できるようにする
-2. カテゴリ管理の「グリッド設定」と「タブ色設定」を、「カテゴリ変更」コンテナ内へ移動する
+* ホバーテキスト表示領域内でテキストを範囲ドラッグ選択している時、テキスト右上付近に「コピー」ボタンを表示する
+* ボタン押下で選択中テキストをクリップボードへコピーする
 
 ## 禁止事項
 
@@ -15,393 +16,377 @@
 * セル登録ロジック
 * DBスキーマ
 * 背景透過/ブラー
-* セル設定
+* カテゴリ管理
 * ウィンドウ幅自動フィット
+* テキストプレビューの読み込み上限
 * テキストプレビューの対象拡張子
-* テキストプレビューの読み込みIPCの大規模変更
-* カテゴリ色保存処理の大規模変更
+* main/preload の大規模変更
 
 ---
 
-# 1. ホバーテキストが一部表示のままになる問題を修正
+# 1. 目的
 
-## 現状
+現在、テキストファイルのホバープレビューは表示され、スクロールもできます。
 
-テキスト系ファイルのホバープレビューは表示されますが、まだ一部しか表示されません。
-
-前回対応で `overflow:auto` は入っていますが、実際には以下のどれかが原因で全文閲覧できていない可能性があります。
-
-* main process 側で 20行に切り詰めている
-* renderer 側で表示テキストをさらに切っている
-* `.textHoverPreview pre` に `max-height` や `overflow:hidden` が残っている
-* `.textHoverPreview` 全体の高さ計算で `pre` が伸びていない
-* `line-clamp` / `max-lines` / `height` 固定が残っている
+追加で、プレビュー内のテキストをドラッグ選択した時に、選択範囲をコピーしやすくするため、プレビュー右上付近に「コピー」ボタンを表示してください。
 
 ---
 
-## 重要方針
+# 2. 期待仕様
 
-今回の目的は「ホバー表示で読み込んだテキストをスクロールで最後まで見られること」です。
+## 表示条件
 
-軽さは維持しつつ、**20行制限は撤廃または緩和**してください。
-読み込み上限は 16KB のままで構いません。
-
-つまり、
+以下の条件を満たした時だけ、コピーボタンを表示してください。
 
 ```text
-読む量: 最大16KB
-表示: 読み込んだ範囲は全部スクロールで閲覧可能
+ホバーテキストプレビューが表示されている
+かつ
+プレビュー内のテキストが範囲選択されている
 ```
 
-にしてください。
+## 非表示条件
 
----
-
-## main process の修正
-
-`electron/main.cjs` の `file:previewText` を確認してください。
-
-現在、以下のような処理がある可能性があります。
-
-```js
-const lines = text.split(/\r?\n/).slice(0, 20);
-
-return {
-  ok: true,
-  text: lines.join("\n"),
-  truncated: stat.size > maxBytes || text.split(/\r?\n/).length > 20,
-  size: stat.size,
-  ext
-};
-```
-
-この場合、20行以降はそもそも renderer に渡っていません。
-以下のように修正してください。
-
-```js
-const text = chunk.toString("utf8");
-
-return {
-  ok: true,
-  text,
-  truncated: stat.size > maxBytes,
-  size: stat.size,
-  ext
-};
-```
-
-## 注意
-
-* 読み込み上限 `16 * 1024` は維持してよい
-* `slice(0, 20)` は削除する
-* 表示行数制限ではなく、プレビュー枠内スクロールで対応する
-* バイナリ判定は維持する
-* 非対象拡張子の除外は維持する
-
----
-
-## renderer 側の確認
-
-`src/App.jsx` で、hoverPreview の text を表示する直前に `slice` していないか確認してください。
-
-検索してください。
+以下の場合はコピーボタンを非表示にしてください。
 
 ```text
-slice(0, 20)
-split(/\r?\n/)
-hoverPreview.text
-textHoverPreview
+選択範囲が空
+プレビューを閉じた
+プレビュー外をクリックした
+Escapeで閉じた
+選択が解除された
 ```
 
-以下のような処理があれば削除または修正してください。
+## 表示位置
 
-```jsx
-hoverPreview.text.split(/\r?\n/).slice(0, 20).join("\n")
-```
+コピーボタンは、ホバーテキスト表示領域の右上付近に表示してください。
 
-表示はそのまま以下でよいです。
-
-```jsx
-<pre>{hoverPreview.text}</pre>
+```text
+┌──────────────────────────────┐
+│ ファイル名              Copy │
+├──────────────────────────────┤
+│ 選択可能なテキスト本文        │
+│ ...                          │
+└──────────────────────────────┘
 ```
 
 ---
 
-## CSS の再修正
+# 3. state を追加
 
-`src/styles.css` の `.textHoverPreview` / `.textHoverPreview pre` を確認し、以下のようにしてください。
+`src/App.jsx` に選択中テキスト用 state を追加してください。
 
-```css
-.textHoverPreview {
-  position: fixed;
-  z-index: 2147483646;
-  width: 420px;
-  max-width: min(520px, calc(100vw - 24px));
-  max-height: min(560px, calc(100vh - 24px));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  pointer-events: auto;
-  user-select: text;
-  -webkit-app-region: no-drag;
-}
-
-.textHoverPreviewTitle {
-  flex-shrink: 0;
-}
-
-.textHoverPreview pre {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: none;
-  height: auto;
-  overflow-y: auto;
-  overflow-x: auto;
-  margin: 0;
-  padding: 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overscroll-behavior: contain;
-}
-
-.textHoverPreviewFooter {
-  flex-shrink: 0;
-}
+```jsx
+const [hoverPreviewSelection, setHoverPreviewSelection] = useState("");
 ```
 
-以下が残っていたら削除してください。
+必要なら、コピー完了表示用 state も追加してください。
 
-```css
-.textHoverPreview {
-  overflow: hidden;
-}
-
-.textHoverPreview pre {
-  max-height: 240px;
-  overflow: hidden;
-}
+```jsx
+const [hoverPreviewCopied, setHoverPreviewCopied] = useState(false);
 ```
-
-ただし `.textHoverPreview` 本体の `overflow: hidden` は、角丸の外へはみ出さない目的なら残して構いません。
-その場合でも、`pre` 側は必ず `overflow-y: auto` にしてください。
 
 ---
 
-## 高さを確実にするための構造確認
+# 4. プレビュー内の選択状態を検知する
 
-Portal表示部分が以下のようになっているか確認してください。
+ホバープレビュー内で `onMouseUp` / `onKeyUp` を使い、選択範囲を取得してください。
 
 ```jsx
-<div
-  className="textHoverPreview"
-  style={{
-    left: hoverPreview.x,
-    top: hoverPreview.y
-  }}
-  onMouseEnter={...}
-  onMouseLeave={...}
-  onWheel={(event) => event.stopPropagation()}
->
-  <div className="textHoverPreviewTitle">
-    {hoverPreview.item?.name ?? hoverPreview.item?.path}
-  </div>
+function updateHoverPreviewSelection() {
+  const selection = window.getSelection?.();
 
-  <pre>{hoverPreview.text}</pre>
+  if (!selection) {
+    setHoverPreviewSelection("");
+    return;
+  }
 
-  {hoverPreview.truncated && (
-    <div className="textHoverPreviewFooter">
-      先頭のみ表示しています
-    </div>
+  const selectedText = selection.toString();
+
+  if (!selectedText || !selectedText.trim()) {
+    setHoverPreviewSelection("");
+    return;
+  }
+
+  setHoverPreviewSelection(selectedText);
+}
+```
+
+ただし、アプリ全体の選択ではなく、ホバープレビュー内で選択された時だけ反応させてください。
+
+---
+
+# 5. プレビュー内選択かどうかを確認する
+
+`textHoverPreview` に ref を追加してください。
+
+```jsx
+const hoverPreviewRef = useRef(null);
+```
+
+選択範囲がホバープレビュー内か確認する関数を追加してください。
+
+```jsx
+function isSelectionInsideHoverPreview() {
+  const selection = window.getSelection?.();
+  const root = hoverPreviewRef.current;
+
+  if (!selection || !root || selection.rangeCount === 0) {
+    return false;
+  }
+
+  const range = selection.getRangeAt(0);
+
+  return (
+    root.contains(range.startContainer) ||
+    root.contains(range.endContainer)
+  );
+}
+```
+
+`updateHoverPreviewSelection` を以下のようにしてください。
+
+```jsx
+function updateHoverPreviewSelection() {
+  if (!isSelectionInsideHoverPreview()) {
+    setHoverPreviewSelection("");
+    return;
+  }
+
+  const selection = window.getSelection?.();
+  const selectedText = selection?.toString?.() ?? "";
+
+  if (!selectedText.trim()) {
+    setHoverPreviewSelection("");
+    return;
+  }
+
+  setHoverPreviewSelection(selectedText);
+  setHoverPreviewCopied(false);
+}
+```
+
+---
+
+# 6. ホバープレビュー JSX を修正
+
+現在の `textHoverPreview` 表示部分に、ref とイベントを追加してください。
+
+```jsx
+{hoverPreview &&
+  createPortal(
+    <div
+      ref={hoverPreviewRef}
+      className="textHoverPreview"
+      style={{
+        left: hoverPreview.x,
+        top: hoverPreview.y
+      }}
+      onMouseEnter={() => {
+        isHoveringPreviewRef.current = true;
+
+        if (hoverPreviewCloseTimerRef.current) {
+          window.clearTimeout(hoverPreviewCloseTimerRef.current);
+          hoverPreviewCloseTimerRef.current = null;
+        }
+      }}
+      onMouseLeave={() => {
+        isHoveringPreviewRef.current = false;
+        scheduleCloseHoverPreview();
+      }}
+      onMouseUp={updateHoverPreviewSelection}
+      onKeyUp={updateHoverPreviewSelection}
+      onWheel={(event) => event.stopPropagation()}
+    >
+      <div className="textHoverPreviewTitle">
+        <span className="textHoverPreviewTitleText">
+          {hoverPreview.item?.name ?? hoverPreview.item?.path}
+        </span>
+
+        {hoverPreviewSelection && (
+          <button
+            type="button"
+            className="textHoverPreviewCopyButton"
+            onClick={copyHoverPreviewSelection}
+          >
+            {hoverPreviewCopied ? "Copied" : "Copy"}
+          </button>
+        )}
+      </div>
+
+      <pre>{hoverPreview.text}</pre>
+
+      {hoverPreview.truncated && (
+        <div className="textHoverPreviewFooter">
+          先頭のみ表示しています
+        </div>
+      )}
+    </div>,
+    document.body
   )}
-</div>
 ```
 
-`pre` をさらに別の `div` で包んでいる場合、その親にも `min-height: 0` と `overflow: auto` が必要です。
+既存の変数名が違う場合は、現在の実装に合わせてください。
 
 ---
 
-## 完了条件
+# 7. コピー処理を追加
 
-以下を実画面で確認してください。
+選択中テキストをクリップボードへコピーしてください。
 
-* 30行以上ある `.txt` ファイルで、プレビュー内スクロールにより下の行まで見られる
-* 30行以上ある `.md` ファイルで、プレビュー内スクロールにより下の行まで見られる
-* 20行で切れていない
-* 読み込み上限 16KB を超える場合は `先頭のみ表示しています` が出る
-* プレビュー領域にカーソルがある間は消えない
-* スクロール中に背面のセル領域が不自然にスクロールしない
-* UIが重くならない
-
----
-
-# 2. カテゴリ管理の「グリッド設定」と「タブ色設定」をカテゴリ変更コンテナへ移動
-
-## 現状
-
-左サイドバーのカテゴリ管理内で、以下がカテゴリ変更とは別コンテナになっています。
-
-```text
-グリッド設定
-タブ色設定
-```
-
-しかし、これらは変更対象カテゴリに対する設定なので、**カテゴリ変更** の項目内へ入れてください。
-
----
-
-## 変更後仕様
-
-カテゴリ管理内の構造を以下のようにしてください。
-
-```text
-カテゴリ管理
-  カテゴリ追加
-    - 新規カテゴリ名
-    - 追加ボタン
-
-  カテゴリ変更
-    - 変更対象カテゴリ
-    - カテゴリ名変更
-    - 列数
-    - 行数
-    - タブ色
-    - 更新/保存系ボタン
-    - カテゴリ削除
-```
-
-つまり、以下の独立サブセクションは不要です。
-
-```text
-グリッド設定
-タブ色設定
-```
-
-これらを削除し、中身を「カテゴリ変更」内へ移動してください。
-
----
-
-## JSX 方針
-
-現在のような構造になっている場合:
+まずは renderer 側の Clipboard API を使ってください。
 
 ```jsx
-<details className="sidebarSubsection">
-  <summary>カテゴリ変更</summary>
-  ...
-</details>
+async function copyHoverPreviewSelection(event) {
+  event.preventDefault();
+  event.stopPropagation();
 
-<details className="sidebarSubsection">
-  <summary>グリッド設定</summary>
-  ...
-</details>
+  const text = hoverPreviewSelection;
 
-<details className="sidebarSubsection">
-  <summary>タブ色設定</summary>
-  ...
-</details>
-```
+  if (!text) return;
 
-以下のように変更してください。
+  try {
+    await navigator.clipboard.writeText(text);
+    setHoverPreviewCopied(true);
 
-```jsx
-<details className="sidebarSubsection" open>
-  <summary className="sidebarSubsectionHeader">
-    <span>カテゴリ変更</span>
-    <span className="sidebarSectionChevron">›</span>
-  </summary>
-
-  <div className="sidebarSubsectionBody">
-    {/* 変更対象カテゴリ */}
-    {/* カテゴリ名変更 */}
-
-    {/* グリッド設定をここへ移動 */}
-    {/* 列数 */}
-    {/* 行数 */}
-
-    {/* タブ色設定をここへ移動 */}
-    {/* タブ色 */}
-
-    {/* 更新/保存系ボタン */}
-
-    {/* カテゴリ削除は最下段 */}
-  </div>
-</details>
-```
-
----
-
-## カテゴリ削除ボタン位置
-
-前回指定どおり、カテゴリ削除はカテゴリ変更内の最下段にしてください。
-
-推奨順:
-
-```text
-変更対象カテゴリ
-カテゴリ名
-列数
-行数
-タブ色
-保存/更新系操作
-カテゴリ削除
-```
-
-削除ボタンは danger 表現を維持してください。
-
----
-
-## 折りたたみ状態
-
-`settings.json` に `categoryManageSections` のような折りたたみ状態を保存している場合、独立していた `grid` と `color` は不要になります。
-
-以下のように整理してください。
-
-```json
-{
-  "ui": {
-    "categoryManageSections": {
-      "add": true,
-      "edit": true
-    }
+    window.setTimeout(() => {
+      setHoverPreviewCopied(false);
+    }, 1200);
+  } catch (error) {
+    console.error("Failed to copy hover preview selection", error);
+    alert("コピーに失敗しました");
   }
 }
 ```
 
-ただし、既存 settings.json に `grid` / `color` が残っていてもアプリが落ちないようにしてください。
+Electron環境で `navigator.clipboard` が使えない場合だけ、preload/main 経由の clipboard API を追加してください。
+
+ただし、まずは `navigator.clipboard.writeText()` を優先してください。
 
 ---
 
-## CSS
+# 8. プレビューを閉じる時に選択状態もクリア
 
-既存の `sidebarSubsection` スタイルをそのまま使って構いません。
-ただし、カテゴリ変更内が長くなるため、項目間の余白を少し整理してください。
+プレビューを閉じる処理で、選択状態もクリアしてください。
 
-```css
-.sidebarSubsectionBody {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+```jsx
+setHoverPreview(null);
+setHoverPreviewSelection("");
+setHoverPreviewCopied(false);
+```
+
+たとえば `scheduleCloseHoverPreview()` 内では以下のようにしてください。
+
+```jsx
+function scheduleCloseHoverPreview() {
+  if (hoverPreviewCloseTimerRef.current) {
+    window.clearTimeout(hoverPreviewCloseTimerRef.current);
+  }
+
+  hoverPreviewCloseTimerRef.current = window.setTimeout(() => {
+    if (!isHoveringIconRef.current && !isHoveringPreviewRef.current) {
+      setHoverPreview(null);
+      setHoverPreviewSelection("");
+      setHoverPreviewCopied(false);
+    }
+  }, 180);
 }
 ```
 
-既に同等のCSSがある場合は重複追加しないでください。
+また、別ファイルのプレビューに切り替わった時もクリアしてください。
+
+```jsx
+setHoverPreviewSelection("");
+setHoverPreviewCopied(false);
+```
 
 ---
 
-## 完了条件
+# 9. 外クリック / Escape 時にもクリア
+
+すでにホバープレビューの close 処理がある場合は、そこに以下を追加してください。
+
+```jsx
+setHoverPreviewSelection("");
+setHoverPreviewCopied(false);
+```
+
+---
+
+# 10. CSS を追加
+
+`src/styles.css` に追加してください。
+
+```css
+.textHoverPreviewTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.textHoverPreviewTitleText {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.textHoverPreviewCopyButton {
+  flex-shrink: 0;
+  border: 1px solid rgba(60, 70, 80, 0.34);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.26);
+  color: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.textHoverPreviewCopyButton:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.textHoverPreviewCopyButton:active {
+  transform: translateY(1px);
+}
+```
+
+選択部分が見やすいように、必要なら以下も追加してください。
+
+```css
+.textHoverPreview ::selection {
+  background: rgba(59, 130, 246, 0.35);
+}
+```
+
+---
+
+# 11. 注意点
+
+* `pre` 内のテキストは選択可能にしてください
+* `.textHoverPreview` に `user-select: text` を維持してください
+* `.textHoverPreview` に `pointer-events: auto` を維持してください
+* コピーボタンを押した時にホバープレビューが即閉じないようにしてください
+* コピーボタン押下時は `event.stopPropagation()` してください
+* 選択中に背面UIがドラッグ/クリックされないようにしてください
+
+---
+
+# 12. 完了条件
 
 以下を実画面で確認してください。
 
-* カテゴリ管理内に「グリッド設定」という独立項目がない
-* カテゴリ管理内に「タブ色設定」という独立項目がない
-* 列数/行数は「カテゴリ変更」内にある
-* タブ色は「カテゴリ変更」内にある
-* 変更対象カテゴリの選択は維持される
-* 列数変更が動く
-* 行数変更が動く
-* タブ色変更が動く
-* カテゴリ削除はカテゴリ変更内の最下段にある
-* カテゴリ追加は独立したまま
+* `.txt` のホバープレビュー内でテキスト範囲選択できる
+* テキストを範囲選択すると右上に `Copy` ボタンが出る
+* `Copy` ボタン押下で選択中テキストがクリップボードへコピーされる
+* コピー後、一時的に `Copied` 表示になる
+* 選択解除すると `Copy` ボタンが消える
+* プレビューから外れると `Copy` ボタンも消える
+* `.md` でも同様に動く
+* フォルダやPDFではプレビュー自体が出ない
+* 既存のホバープレビュー保持・スクロール動作が壊れていない
 
 ---
 
@@ -410,26 +395,19 @@ Portal表示部分が以下のようになっているか確認してくださ�
 ```text
 対応結果:
 
-1. ホバーテキスト全文スクロール
-- main側の20行制限削除: OK / NG
-- renderer側の行数切り詰め削除: OK / NG
-- pre部分 overflow-y:auto: OK / NG
-- 30行以上のtxtでスクロール確認: OK / NG
-- 30行以上のmdでスクロール確認: OK / NG
-- 16KB上限維持: OK / NG
-
-2. カテゴリ管理構造整理
-- グリッド設定をカテゴリ変更内へ移動: OK / NG
-- タブ色設定をカテゴリ変更内へ移動: OK / NG
-- 独立したグリッド設定項目削除: OK / NG
-- 独立したタブ色設定項目削除: OK / NG
-- カテゴリ削除を最下段に維持: OK / NG
-- 既存操作維持: OK / NG
+ホバーテキスト選択コピー:
+- 選択中テキスト state 追加: OK / NG
+- プレビュー内選択判定: OK / NG
+- Copy ボタン表示: OK / NG
+- クリップボードコピー: OK / NG
+- Copied 表示: OK / NG
+- 選択解除/プレビュー終了時のクリア: OK / NG
+- 既存ホバー保持維持: OK / NG
+- 既存スクロール維持: OK / NG
 
 変更ファイル:
 - src/App.jsx:
 - src/styles.css:
-- electron/main.cjs:
 - その他:
 
 確認:
