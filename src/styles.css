@@ -826,28 +826,60 @@ label {
   background: rgba(255, 255, 255, var(--gd-panel-opacity, 0.9)) !important;
   backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
-  border: 1px solid var(--category-accent-color, var(--gd-border-subtle));
-  border-top: 4px solid var(--category-accent-color, var(--accent));
-  border-radius: 8px;
-  padding: 12px;
+  border: 1px solid var(--gd-border-subtle);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
 }
 
-.genreHeader {
+.genreCompactHeader {
+  height: 30px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 3px 0;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.10);
+  border-bottom: 1px solid var(--gd-border-subtle);
+  user-select: none;
+}
+
+.genreAccentBar {
+  width: 4px;
+  align-self: stretch;
+  flex-shrink: 0;
+  background: var(--category-accent-color, #60a5fa);
+}
+
+.genreCompactInfo {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  flex: 1;
+  overflow: hidden;
 }
 
-.genreHeader h2 {
-  margin: 0;
-  font-size: 16px;
+.genreCompactTitle {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
   color: var(--category-accent-color, inherit);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.genreHeader span {
+.genreCompactMeta {
+  flex-shrink: 0;
   color: #6d7a73;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.68;
+  white-space: nowrap;
 }
 
 .iconButton {
@@ -857,15 +889,30 @@ label {
 }
 
 .genreCollapseButton {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--gd-border-subtle);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.18);
-  font-size: 18px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
   line-height: 1;
+  -webkit-app-region: no-drag;
+}
+
+.genreCollapseButton:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.cellGridWrap {
+  padding: 8px;
 }
 
 .cellGrid {

@@ -1,392 +1,356 @@
-ß
-# GridDesk 修正指示：ホバーテキスト選択時にコピーボタンを表示する
+# GridDesk 修正指示：カテゴリタブを1行コンパクトバー型に変更
 
-今回は以下のみ対応してください。
+今回は、中央セル領域のカテゴリタブ表示を修正してください。
 
-* ホバーテキスト表示領域内でテキストを範囲ドラッグ選択している時、テキスト右上付近に「コピー」ボタンを表示する
-* ボタン押下で選択中テキストをクリップボードへコピーする
+## 目的
 
-## 禁止事項
+現在のカテゴリカード/タブの表示を、情報を1行にまとめたコンパクトバー型に変更します。
+また、タブの高さをできるだけ細くし、セルグリッド部分を広く使えるようにしてください。
 
-今回は以下を触らないでください。
+## 対象
 
-* ファイル/フォルダ起動処理
-* 右クリックメニュー
-* 削除モード
-* セル登録ロジック
-* DBスキーマ
-* 背景透過/ブラー
-* カテゴリ管理
-* ウィンドウ幅自動フィット
-* テキストプレビューの読み込み上限
-* テキストプレビューの対象拡張子
-* main/preload の大規模変更
+中央セル領域に表示されるカテゴリごとのヘッダー/タブ部分。
 
 ---
 
-# 1. 目的
+# 1. 変更後の表示イメージ
 
-現在、テキストファイルのホバープレビューは表示され、スクロールもできます。
-
-追加で、プレビュー内のテキストをドラッグ選択した時に、選択範囲をコピーしやすくするため、プレビュー右上付近に「コピー」ボタンを表示してください。
-
----
-
-# 2. 期待仕様
-
-## 表示条件
-
-以下の条件を満たした時だけ、コピーボタンを表示してください。
+カテゴリタブは以下のような1行表示にしてください。
 
 ```text
-ホバーテキストプレビューが表示されている
-かつ
-プレビュー内のテキストが範囲選択されている
+01_設計    4×3    8 items    −
+────────────────────────────
+セルグリッド
 ```
 
-## 非表示条件
-
-以下の場合はコピーボタンを非表示にしてください。
+または、よりコンパクトに以下でもよいです。
 
 ```text
-選択範囲が空
-プレビューを閉じた
-プレビュー外をクリックした
-Escapeで閉じた
-選択が解除された
+▌ 01_設計   4×3   8 items                              −
 ```
 
-## 表示位置
+## 表示要素
 
-コピーボタンは、ホバーテキスト表示領域の右上付近に表示してください。
+1行内に以下を表示してください。
 
-```text
-┌──────────────────────────────┐
-│ ファイル名              Copy │
-├──────────────────────────────┤
-│ 選択可能なテキスト本文        │
-│ ...                          │
-└──────────────────────────────┘
-```
+| 位置   | 内容                 |
+| ---- | ------------------ |
+| 左端   | カテゴリ色のアクセントバー      |
+| 左側   | カテゴリ名              |
+| 中央付近 | グリッドサイズ `列数×行数`    |
+| 中央付近 | 登録アイテム数 `n items`  |
+| 右端   | 折りたたみボタン `−` / `+` |
 
 ---
 
-# 3. state を追加
+# 2. タブの高さを細くする
 
-`src/App.jsx` に選択中テキスト用 state を追加してください。
+## 期待仕様
 
-```jsx
-const [hoverPreviewSelection, setHoverPreviewSelection] = useState("");
-```
+カテゴリタブの高さは、できるだけ細くしてください。
 
-必要なら、コピー完了表示用 state も追加してください。
-
-```jsx
-const [hoverPreviewCopied, setHoverPreviewCopied] = useState(false);
-```
-
----
-
-# 4. プレビュー内の選択状態を検知する
-
-ホバープレビュー内で `onMouseUp` / `onKeyUp` を使い、選択範囲を取得してください。
-
-```jsx
-function updateHoverPreviewSelection() {
-  const selection = window.getSelection?.();
-
-  if (!selection) {
-    setHoverPreviewSelection("");
-    return;
-  }
-
-  const selectedText = selection.toString();
-
-  if (!selectedText || !selectedText.trim()) {
-    setHoverPreviewSelection("");
-    return;
-  }
-
-  setHoverPreviewSelection(selectedText);
-}
-```
-
-ただし、アプリ全体の選択ではなく、ホバープレビュー内で選択された時だけ反応させてください。
-
----
-
-# 5. プレビュー内選択かどうかを確認する
-
-`textHoverPreview` に ref を追加してください。
-
-```jsx
-const hoverPreviewRef = useRef(null);
-```
-
-選択範囲がホバープレビュー内か確認する関数を追加してください。
-
-```jsx
-function isSelectionInsideHoverPreview() {
-  const selection = window.getSelection?.();
-  const root = hoverPreviewRef.current;
-
-  if (!selection || !root || selection.rangeCount === 0) {
-    return false;
-  }
-
-  const range = selection.getRangeAt(0);
-
-  return (
-    root.contains(range.startContainer) ||
-    root.contains(range.endContainer)
-  );
-}
-```
-
-`updateHoverPreviewSelection` を以下のようにしてください。
-
-```jsx
-function updateHoverPreviewSelection() {
-  if (!isSelectionInsideHoverPreview()) {
-    setHoverPreviewSelection("");
-    return;
-  }
-
-  const selection = window.getSelection?.();
-  const selectedText = selection?.toString?.() ?? "";
-
-  if (!selectedText.trim()) {
-    setHoverPreviewSelection("");
-    return;
-  }
-
-  setHoverPreviewSelection(selectedText);
-  setHoverPreviewCopied(false);
-}
-```
-
----
-
-# 6. ホバープレビュー JSX を修正
-
-現在の `textHoverPreview` 表示部分に、ref とイベントを追加してください。
-
-```jsx
-{hoverPreview &&
-  createPortal(
-    <div
-      ref={hoverPreviewRef}
-      className="textHoverPreview"
-      style={{
-        left: hoverPreview.x,
-        top: hoverPreview.y
-      }}
-      onMouseEnter={() => {
-        isHoveringPreviewRef.current = true;
-
-        if (hoverPreviewCloseTimerRef.current) {
-          window.clearTimeout(hoverPreviewCloseTimerRef.current);
-          hoverPreviewCloseTimerRef.current = null;
-        }
-      }}
-      onMouseLeave={() => {
-        isHoveringPreviewRef.current = false;
-        scheduleCloseHoverPreview();
-      }}
-      onMouseUp={updateHoverPreviewSelection}
-      onKeyUp={updateHoverPreviewSelection}
-      onWheel={(event) => event.stopPropagation()}
-    >
-      <div className="textHoverPreviewTitle">
-        <span className="textHoverPreviewTitleText">
-          {hoverPreview.item?.name ?? hoverPreview.item?.path}
-        </span>
-
-        {hoverPreviewSelection && (
-          <button
-            type="button"
-            className="textHoverPreviewCopyButton"
-            onClick={copyHoverPreviewSelection}
-          >
-            {hoverPreviewCopied ? "Copied" : "Copy"}
-          </button>
-        )}
-      </div>
-
-      <pre>{hoverPreview.text}</pre>
-
-      {hoverPreview.truncated && (
-        <div className="textHoverPreviewFooter">
-          先頭のみ表示しています
-        </div>
-      )}
-    </div>,
-    document.body
-  )}
-```
-
-既存の変数名が違う場合は、現在の実装に合わせてください。
-
----
-
-# 7. コピー処理を追加
-
-選択中テキストをクリップボードへコピーしてください。
-
-まずは renderer 側の Clipboard API を使ってください。
-
-```jsx
-async function copyHoverPreviewSelection(event) {
-  event.preventDefault();
-  event.stopPropagation();
-
-  const text = hoverPreviewSelection;
-
-  if (!text) return;
-
-  try {
-    await navigator.clipboard.writeText(text);
-    setHoverPreviewCopied(true);
-
-    window.setTimeout(() => {
-      setHoverPreviewCopied(false);
-    }, 1200);
-  } catch (error) {
-    console.error("Failed to copy hover preview selection", error);
-    alert("コピーに失敗しました");
-  }
-}
-```
-
-Electron環境で `navigator.clipboard` が使えない場合だけ、preload/main 経由の clipboard API を追加してください。
-
-ただし、まずは `navigator.clipboard.writeText()` を優先してください。
-
----
-
-# 8. プレビューを閉じる時に選択状態もクリア
-
-プレビューを閉じる処理で、選択状態もクリアしてください。
-
-```jsx
-setHoverPreview(null);
-setHoverPreviewSelection("");
-setHoverPreviewCopied(false);
-```
-
-たとえば `scheduleCloseHoverPreview()` 内では以下のようにしてください。
-
-```jsx
-function scheduleCloseHoverPreview() {
-  if (hoverPreviewCloseTimerRef.current) {
-    window.clearTimeout(hoverPreviewCloseTimerRef.current);
-  }
-
-  hoverPreviewCloseTimerRef.current = window.setTimeout(() => {
-    if (!isHoveringIconRef.current && !isHoveringPreviewRef.current) {
-      setHoverPreview(null);
-      setHoverPreviewSelection("");
-      setHoverPreviewCopied(false);
-    }
-  }, 180);
-}
-```
-
-また、別ファイルのプレビューに切り替わった時もクリアしてください。
-
-```jsx
-setHoverPreviewSelection("");
-setHoverPreviewCopied(false);
-```
-
----
-
-# 9. 外クリック / Escape 時にもクリア
-
-すでにホバープレビューの close 処理がある場合は、そこに以下を追加してください。
-
-```jsx
-setHoverPreviewSelection("");
-setHoverPreviewCopied(false);
-```
-
----
-
-# 10. CSS を追加
-
-`src/styles.css` に追加してください。
+推奨値:
 
 ```css
-.textHoverPreviewTitle {
+height: 30px;
+min-height: 30px;
+```
+
+厳しければ 32px まで許容します。
+
+```css
+height: 32px;
+min-height: 32px;
+```
+
+---
+
+# 3. JSX構造
+
+中央セルのカテゴリカード部分を探してください。
+
+検索キーワード:
+
+```text
+genreCard
+genreHeader
+genreTitle
+category
+collapse
+collapsed
+cellGrid
+```
+
+カテゴリヘッダーを以下のような構造にしてください。
+
+```jsx
+<div
+  className="genreCard"
+  style={{
+    "--category-accent-color": category.accent_color ?? category.accentColor ?? "#60a5fa"
+  }}
+>
+  <div className="genreCompactHeader">
+    <div className="genreAccentBar" />
+
+    <div className="genreCompactInfo">
+      <span className="genreCompactTitle">
+        {category.name}
+      </span>
+
+      <span className="genreCompactMeta">
+        {category.cols}×{category.rows}
+      </span>
+
+      <span className="genreCompactMeta">
+        {getCategoryItemCount(category.id)} items
+      </span>
+    </div>
+
+    <button
+      type="button"
+      className="genreCollapseButton"
+      onClick={() => toggleCategoryCollapsed(category.id)}
+      aria-label={isCategoryCollapsed(category.id) ? "カテゴリを開く" : "カテゴリを閉じる"}
+    >
+      {isCategoryCollapsed(category.id) ? "+" : "−"}
+    </button>
+  </div>
+
+  {!isCategoryCollapsed(category.id) && (
+    <div className="cellGridWrap">
+      <div className="cellGrid">
+        ...
+      </div>
+    </div>
+  )}
+</div>
+```
+
+既存の関数名・変数名に合わせてください。
+
+例えば実装上 `genre` を使っている場合は `category` ではなく `genre` のままで構いません。
+ただしユーザー向け表示名は「カテゴリ」のままで問題ありません。
+
+---
+
+# 4. 登録アイテム数を表示する
+
+カテゴリ内の登録アイテム数を表示してください。
+
+既に `items` 配列がある場合は、カテゴリIDで数えてください。
+
+例:
+
+```jsx
+function getCategoryItemCount(categoryId) {
+  return items.filter((item) => {
+    return String(item.genre_id ?? item.category_id) === String(categoryId);
+  }).length;
+}
+```
+
+既存のデータ構造に合わせてください。
+
+注意:
+
+* 削除済み/無効アイテムがある場合は数に含めない
+* `enabled === 0` のようなフラグがある場合は除外する
+
+例:
+
+```jsx
+function getCategoryItemCount(categoryId) {
+  return items.filter((item) => {
+    const itemCategoryId = item.genre_id ?? item.category_id;
+    const enabled = item.enabled ?? 1;
+
+    return String(itemCategoryId) === String(categoryId) && enabled !== 0;
+  }).length;
+}
+```
+
+---
+
+# 5. CSS
+
+`src/styles.css` に以下を追加・統合してください。
+
+```css
+.genreCard {
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+  align-self: flex-start;
+  border: 1px solid var(--gd-border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.genreCompactHeader {
+  height: 30px;
+  min-height: 30px;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 3px 6px 3px 0;
+  box-sizing: border-box;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--category-accent-color, #60a5fa) 18%, transparent),
+      rgba(255, 255, 255, 0.08)
+    );
+  border-bottom: 1px solid var(--gd-border-subtle);
+  user-select: none;
 }
 
-.textHoverPreviewTitleText {
+.genreAccentBar {
+  width: 4px;
+  align-self: stretch;
+  flex-shrink: 0;
+  background: var(--category-accent-color, #60a5fa);
+}
+
+.genreCompactInfo {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex: 1;
+  overflow: hidden;
+}
+
+.genreCompactTitle {
+  min-width: 0;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-.textHoverPreviewCopyButton {
+.genreCompactMeta {
   flex-shrink: 0;
-  border: 1px solid rgba(60, 70, 80, 0.34);
-  border-radius: 7px;
-  padding: 3px 8px;
   font-size: 11px;
-  font-weight: 700;
+  line-height: 1;
+  opacity: 0.68;
+  white-space: nowrap;
+}
+
+.genreCollapseButton {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border: 1px solid var(--gd-border-subtle);
+  border-radius: 7px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.14);
   color: inherit;
   -webkit-app-region: no-drag;
 }
 
-.textHoverPreviewCopyButton:hover {
-  background: rgba(255, 255, 255, 0.38);
-}
-
-.textHoverPreviewCopyButton:active {
-  transform: translateY(1px);
+.genreCollapseButton:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 ```
 
-選択部分が見やすいように、必要なら以下も追加してください。
+## color-mix が不安な場合
+
+Electron/Chromiumで `color-mix()` が効かない場合に備え、単純な背景でも構いません。
 
 ```css
-.textHoverPreview ::selection {
-  background: rgba(59, 130, 246, 0.35);
+.genreCompactHeader {
+  background: rgba(255, 255, 255, 0.10);
 }
 ```
 
----
-
-# 11. 注意点
-
-* `pre` 内のテキストは選択可能にしてください
-* `.textHoverPreview` に `user-select: text` を維持してください
-* `.textHoverPreview` に `pointer-events: auto` を維持してください
-* コピーボタンを押した時にホバープレビューが即閉じないようにしてください
-* コピーボタン押下時は `event.stopPropagation()` してください
-* 選択中に背面UIがドラッグ/クリックされないようにしてください
+その場合でも、左アクセントバーと枠線でカテゴリ色が分かるようにしてください。
 
 ---
 
-# 12. 完了条件
+# 6. タブをさらに細くする場合
+
+より細くしたい場合は以下にしてください。
+
+```css
+.genreCompactHeader {
+  height: 28px;
+  min-height: 28px;
+  padding: 2px 6px 2px 0;
+}
+
+.genreCollapseButton {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  font-size: 14px;
+}
+
+.genreCompactTitle {
+  font-size: 12px;
+}
+
+.genreCompactMeta {
+  font-size: 10px;
+}
+```
+
+ただし、クリックしにくくなりすぎる場合は 30px を推奨します。
+
+---
+
+# 7. セルグリッドとの間隔
+
+タブを細くした分、セルグリッドとの間隔も詰めてください。
+
+```css
+.cellGridWrap {
+  padding: 8px;
+}
+```
+
+現在 `padding: 12px` や `18px` がある場合、必要に応じて小さくしてください。
+
+---
+
+# 8. 折りたたみ時の表示
+
+カテゴリを折りたたんだ時は、タブ1行だけ残してください。
+
+```text
+▌ 01_設計   4×3   8 items                              +
+```
+
+セルグリッド部分は非表示にしてください。
+
+既存の折りたたみ状態管理はそのまま使ってください。
+
+---
+
+# 9. 完了条件
 
 以下を実画面で確認してください。
 
-* `.txt` のホバープレビュー内でテキスト範囲選択できる
-* テキストを範囲選択すると右上に `Copy` ボタンが出る
-* `Copy` ボタン押下で選択中テキストがクリップボードへコピーされる
-* コピー後、一時的に `Copied` 表示になる
-* 選択解除すると `Copy` ボタンが消える
-* プレビューから外れると `Copy` ボタンも消える
-* `.md` でも同様に動く
-* フォルダやPDFではプレビュー自体が出ない
-* 既存のホバープレビュー保持・スクロール動作が壊れていない
+* カテゴリタブの情報が1行に収まっている
+* カテゴリ名、列数×行数、アイテム数が表示されている
+* 左端にカテゴリ色のアクセントバーが表示される
+* タブ色設定がアクセントバーに反映される
+* 折りたたみボタンが右端にある
+* 開いている時は `−`
+* 閉じている時は `+`
+* タブ高さが以前より細くなっている
+* セルグリッドとの余白が詰まっている
+* カテゴリ名が長い場合は省略表示される
+* 折りたたみ動作は壊れていない
 
 ---
 
@@ -395,15 +359,15 @@ setHoverPreviewCopied(false);
 ```text
 対応結果:
 
-ホバーテキスト選択コピー:
-- 選択中テキスト state 追加: OK / NG
-- プレビュー内選択判定: OK / NG
-- Copy ボタン表示: OK / NG
-- クリップボードコピー: OK / NG
-- Copied 表示: OK / NG
-- 選択解除/プレビュー終了時のクリア: OK / NG
-- 既存ホバー保持維持: OK / NG
-- 既存スクロール維持: OK / NG
+カテゴリタブ1行コンパクト化:
+- 1行表示化: OK / NG
+- カテゴリ名表示: OK / NG
+- 列数×行数表示: OK / NG
+- アイテム数表示: OK / NG
+- カテゴリ色アクセントバー: OK / NG
+- タブ高さ縮小: OK / NG
+- 折りたたみ + / − 維持: OK / NG
+- セルグリッド余白調整: OK / NG
 
 変更ファイル:
 - src/App.jsx:
@@ -416,3 +380,6 @@ setHoverPreviewCopied(false);
 - node --check electron/preload.cjs:
 - npm start:
 ```
+
+ビルド成功だけで完了扱いにしないでください。
+必ず実画面で、カテゴリタブが1行かつ細く表示されることを確認してください。

@@ -1296,6 +1296,7 @@ function GenreGrid({
     for (let x = 0; x < genre.cols; x += 1) cells.push({ x, y });
   }
   const itemMap = new Map(items.map((item) => [`${item.x}:${item.y}`, item]));
+  const itemCount = items.filter((item) => (item.enabled ?? 1) !== 0).length;
 
   return (
     <section
@@ -1306,53 +1307,64 @@ function GenreGrid({
       }}
       onMouseDown={onSelectGenre}
     >
-      <header className="genreHeader">
-        <button className="genreCollapseButton" onClick={onToggleCollapsed}>{genre.collapsed ? "+" : "−"}</button>
-        <div>
-          <h2>{genre.name}</h2>
-          <span>{genre.cols} x {genre.rows}</span>
+      <header className="genreCompactHeader">
+        <div className="genreAccentBar" />
+        <div className="genreCompactInfo">
+          <span className="genreCompactTitle">{genre.name}</span>
+          <span className="genreCompactMeta">{genre.cols}×{genre.rows}</span>
+          <span className="genreCompactMeta">{itemCount} items</span>
         </div>
+        <button
+          type="button"
+          className="genreCollapseButton"
+          onClick={onToggleCollapsed}
+          aria-label={genre.collapsed ? "カテゴリを開く" : "カテゴリを閉じる"}
+        >
+          {genre.collapsed ? "+" : "−"}
+        </button>
       </header>
       {!genre.collapsed && (
-        <div
-          className="cellGrid"
-          style={{
-            gridTemplateColumns: `repeat(${genre.cols}, var(--gd-cell-width, 92px))`,
-            gridTemplateRows: `repeat(${genre.rows}, var(--gd-cell-height, 92px))`,
-            gap: "var(--gd-cell-gap, 12px)"
-          }}
-        >
-          {cells.map(({ x, y }) => {
-            const key = `${x}:${y}`;
-            const item = itemMap.get(key);
-            const disabled = disabledSet.has(key);
-            return (
-              <Cell
-                key={key}
-                x={x}
-                y={y}
-                item={item}
-                disabled={disabled}
-                selected={item?.id === selectedItemId}
-                registerMode={registerMode}
-                deleteCellMode={deleteCellMode}
-                dragTarget={dragTargetCell?.genreId === genre.id && dragTargetCell?.x === x && dragTargetCell?.y === y}
-                settings={settings}
-                onClick={() => onCellClick(x, y, disabled)}
-                onDropPath={(targetPath) => onDropPath(x, y, targetPath)}
-                onMoveItem={(draggedItem) => onMoveItem(draggedItem, x, y)}
-                onDragTargetChange={(active) => onDragTargetChange(active ? { genreId: genre.id, x, y } : null)}
-                onSelectItem={onSelectItem}
-                onOpenItem={onOpenItem}
-                onEditItem={onEditItem}
-                onRenameItem={onRenameItem}
-                onDeleteItem={onDeleteItem}
-                onRevealItem={onRevealItem}
-                onHoverItemStart={onHoverItemStart}
-                onHoverItemEnd={onHoverItemEnd}
-              />
-            );
-          })}
+        <div className="cellGridWrap">
+          <div
+            className="cellGrid"
+            style={{
+              gridTemplateColumns: `repeat(${genre.cols}, var(--gd-cell-width, 92px))`,
+              gridTemplateRows: `repeat(${genre.rows}, var(--gd-cell-height, 92px))`,
+              gap: "var(--gd-cell-gap, 12px)"
+            }}
+          >
+            {cells.map(({ x, y }) => {
+              const key = `${x}:${y}`;
+              const item = itemMap.get(key);
+              const disabled = disabledSet.has(key);
+              return (
+                <Cell
+                  key={key}
+                  x={x}
+                  y={y}
+                  item={item}
+                  disabled={disabled}
+                  selected={item?.id === selectedItemId}
+                  registerMode={registerMode}
+                  deleteCellMode={deleteCellMode}
+                  dragTarget={dragTargetCell?.genreId === genre.id && dragTargetCell?.x === x && dragTargetCell?.y === y}
+                  settings={settings}
+                  onClick={() => onCellClick(x, y, disabled)}
+                  onDropPath={(targetPath) => onDropPath(x, y, targetPath)}
+                  onMoveItem={(draggedItem) => onMoveItem(draggedItem, x, y)}
+                  onDragTargetChange={(active) => onDragTargetChange(active ? { genreId: genre.id, x, y } : null)}
+                  onSelectItem={onSelectItem}
+                  onOpenItem={onOpenItem}
+                  onEditItem={onEditItem}
+                  onRenameItem={onRenameItem}
+                  onDeleteItem={onDeleteItem}
+                  onRevealItem={onRevealItem}
+                  onHoverItemStart={onHoverItemStart}
+                  onHoverItemEnd={onHoverItemEnd}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
     </section>
