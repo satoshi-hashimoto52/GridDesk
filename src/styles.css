@@ -17,7 +17,7 @@
   --gd-icon-size: 32px;
   --gd-label-font-size: 12px;
   --gd-label-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --gd-cell-radius: 12px;
+  --gd-cell-radius: 8px;
   --gd-cell-border-opacity: 0.28;
   --gd-border-subtle: rgba(255, 255, 255, 0.28);
   --gd-border-strong: rgba(255, 255, 255, 0.42);
@@ -827,7 +827,7 @@ label {
   backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
   border: 1px solid var(--gd-border-subtle);
-  border-radius: 12px;
+  border-radius: 7px;
   padding: 0;
   overflow: hidden;
 }
@@ -843,6 +843,7 @@ label {
   background: rgba(255, 255, 255, 0.10);
   border-bottom: 1px solid var(--gd-border-subtle);
   user-select: none;
+  border-radius: 7px 7px 0 0;
 }
 
 .genreAccentBar {
@@ -929,7 +930,7 @@ label {
   width: var(--gd-cell-width, 92px);
   height: var(--gd-cell-height, 92px);
   border: 1px solid rgba(255, 255, 255, var(--gd-cell-border-opacity, 0.28));
-  border-radius: var(--gd-cell-radius, 12px);
+  border-radius: var(--gd-cell-radius, 8px);
   background: rgba(251, 252, 250, var(--gd-cell-opacity, 0.65)) !important;
   backdrop-filter: var(--gd-backdrop-blur, none);
   -webkit-backdrop-filter: var(--gd-backdrop-blur, none);
@@ -971,7 +972,7 @@ label {
   width: var(--gd-cell-width, 92px);
   height: var(--gd-cell-height, 92px);
   border: 1px solid var(--gd-border-subtle);
-  border-radius: var(--gd-cell-radius, 12px);
+  border-radius: var(--gd-cell-radius, 8px);
   padding: 18px 6px 6px;
   display: flex;
   flex-direction: column;
@@ -1184,7 +1185,9 @@ label {
   white-space: nowrap;
 }
 
-.textHoverPreviewCopyButton {
+.textHoverPreviewCopyButton,
+.textHoverPreviewPinButton,
+.pinnedTextPreviewCloseButton {
   flex-shrink: 0;
   border: 1px solid rgba(60, 70, 80, 0.34);
   border-radius: 7px;
@@ -1197,11 +1200,15 @@ label {
   -webkit-app-region: no-drag;
 }
 
-.textHoverPreviewCopyButton:hover {
+.textHoverPreviewCopyButton:hover,
+.textHoverPreviewPinButton:hover,
+.pinnedTextPreviewCloseButton:hover {
   background: rgba(255, 255, 255, 0.38);
 }
 
-.textHoverPreviewCopyButton:active {
+.textHoverPreviewCopyButton:active,
+.textHoverPreviewPinButton:active,
+.pinnedTextPreviewCloseButton:active {
   transform: translateY(1px);
 }
 
@@ -1246,6 +1253,93 @@ label {
 
 .textHoverPreview pre::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.pinnedTextPreview {
+  position: fixed;
+  z-index: 2147483645;
+  min-width: 280px;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--gd-border-subtle);
+  border-radius: 8px;
+  background: rgba(246, 247, 244, 0.97);
+  color: inherit;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    0 18px 38px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.pinnedTextPreviewHeader {
+  height: 30px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--gd-border-subtle);
+  cursor: move;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.pinnedTextPreviewTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinnedTextPreviewBody {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.pinnedTextPreviewFooter {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  opacity: 0.72;
+  border-top: 1px solid var(--gd-border-subtle);
+}
+
+.pinnedTextPreviewResizeHandle {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  -webkit-app-region: no-drag;
+}
+
+.pinnedTextPreviewResizeHandle::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(60, 70, 80, 0.45);
+  border-bottom: 2px solid rgba(60, 70, 80, 0.45);
 }
 
 .toast {

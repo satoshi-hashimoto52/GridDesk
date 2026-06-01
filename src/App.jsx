@@ -78,7 +78,7 @@ const defaultSettings = {
       labelFontFamily: "system",
       showTypeBadge: true,
       showFileName: true,
-      borderRadius: 12,
+      borderRadius: 8,
       borderOpacity: 0.28
     }
   },
@@ -228,7 +228,7 @@ function applyThemeVariables(settings) {
   root.style.setProperty("--gd-icon-size", `${cell.iconSize ?? 32}px`);
   root.style.setProperty("--gd-label-font-size", `${cell.labelFontSize ?? 12}px`);
   root.style.setProperty("--gd-label-font-family", getLabelFontFamilyValue(cell.labelFontFamily ?? "system"));
-  root.style.setProperty("--gd-cell-radius", `${cell.borderRadius ?? 12}px`);
+  root.style.setProperty("--gd-cell-radius", `${cell.borderRadius ?? 8}px`);
   root.style.setProperty("--gd-cell-border-opacity", String(cell.borderOpacity ?? 0.28));
 }
 
@@ -318,6 +318,8 @@ function App() {
   const hoverPreviewTimerRef = useRef(null);
   const hoverPreviewCloseTimerRef = useRef(null);
   const hoverPreviewCopiedTimerRef = useRef(null);
+  const pinnedDragRef = useRef(null);
+  const pinnedResizeRef = useRef(null);
   const hoverPreviewRequestRef = useRef(0);
   const isHoveringIconRef = useRef(false);
   const isHoveringPreviewRef = useRef(false);
@@ -328,6 +330,7 @@ function App() {
   const [hoverPreview, setHoverPreview] = useState(null);
   const [hoverPreviewSelection, setHoverPreviewSelection] = useState("");
   const [hoverPreviewCopied, setHoverPreviewCopied] = useState(false);
+  const [pinnedHoverPreview, setPinnedHoverPreview] = useState(null);
   const [genreDraft, setGenreDraft] = useState({ name: "", cols: 6, rows: 3, accentColor: "#2f7d68", memo: "" });
   const [editGenreId, setEditGenreId] = useState("");
   const [itemForm, setItemForm] = useState(emptyForm());
@@ -502,7 +505,13 @@ function App() {
   }
 
   function scheduleFitWindowWidth() {
-    if (settings?.ui?.autoFitWindowWidth === false) return;
+    if (settings?.ui?.autoFitWindowWidth === false) {
+      if (fitWindowTimer.current) {
+        clearTimeout(fitWindowTimer.current);
+        fitWindowTimer.current = null;
+      }
+      return;
+    }
     if (fitWindowTimer.current) clearTimeout(fitWindowTimer.current);
     fitWindowTimer.current = window.setTimeout(() => {
       window.requestAnimationFrame(() => {
@@ -819,6 +828,26 @@ function App() {
     clearHoverPreviewSelection();
   }
 
+  function pinHoverPreview(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!hoverPreview) return;
+
+    const width = Math.min(520, Math.max(360, window.innerWidth - hoverPreview.x - 12));
+    const height = Math.min(420, Math.max(240, window.innerHeight - hoverPreview.y - 12));
+    setPinnedHoverPreview({
+      id: String(Date.now()),
+      x: hoverPreview.x,
+      y: hoverPreview.y,
+      width,
+      height,
+      item: hoverPreview.item,
+      text: hoverPreview.text,
+      truncated: hoverPreview.truncated
+    });
+    closeHoverPreview();
+  }
+
   function scheduleCloseHoverPreview() {
     if (hoverPreviewCloseTimerRef.current) {
       clearTimeout(hoverPreviewCloseTimerRef.current);
@@ -944,6 +973,88 @@ function App() {
     } catch (error) {
       console.error("Failed to copy hover preview selection", error);
       alert("コピーに失敗しました");
+    }
+  }
+
+  function clampPinnedPreviewPosition(x, y, width, height) {
+    const padding = 8;
+    const maxX = Math.max(padding, window.innerWidth - width - padding);
+    const maxY = Math.max(padding, window.innerHeight - height - padding);
+    return {
+      x: Math.max(padding, Math.min(x, maxX)),
+      y: Math.max(padding, Math.min(y, maxY))
+    };
+  }
+
+  function handlePinnedPreviewDragStart(event) {
+    if (!pinnedHoverPreview) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pinnedDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: pinnedHoverPreview.x,
+      originY: pinnedHoverPreview.y
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePinnedPreviewDragMove(event) {
+    const drag = pinnedDragRef.current;
+    if (!drag || !pinnedHoverPreview || drag.pointerId !== event.pointerId) return;
+    const clamped = clampPinnedPreviewPosition(
+      drag.originX + event.clientX - drag.startX,
+      drag.originY + event.clientY - drag.startY,
+      pinnedHoverPreview.width,
+      pinnedHoverPreview.height
+    );
+    setPinnedHoverPreview((prev) => prev ? { ...prev, x: clamped.x, y: clamped.y } : prev);
+  }
+
+  function handlePinnedPreviewDragEnd(event) {
+    if (pinnedDragRef.current?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      pinnedDragRef.current = null;
+    }
+  }
+
+  function handlePinnedPreviewResizeStart(event) {
+    if (!pinnedHoverPreview) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pinnedResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originWidth: pinnedHoverPreview.width,
+      originHeight: pinnedHoverPreview.height
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePinnedPreviewResizeMove(event) {
+    const resize = pinnedResizeRef.current;
+    if (!resize || !pinnedHoverPreview || resize.pointerId !== event.pointerId) return;
+    const minWidth = 280;
+    const minHeight = 180;
+    const maxWidth = Math.max(minWidth, window.innerWidth - pinnedHoverPreview.x - 8);
+    const maxHeight = Math.max(minHeight, window.innerHeight - pinnedHoverPreview.y - 8);
+    setPinnedHoverPreview((prev) => prev ? {
+      ...prev,
+      width: Math.max(minWidth, Math.min(resize.originWidth + event.clientX - resize.startX, maxWidth)),
+      height: Math.max(minHeight, Math.min(resize.originHeight + event.clientY - resize.startY, maxHeight))
+    } : prev);
+  }
+
+  function handlePinnedPreviewResizeEnd(event) {
+    if (pinnedResizeRef.current?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      pinnedResizeRef.current = null;
     }
   }
 
@@ -1256,9 +1367,59 @@ function App() {
                 {hoverPreviewCopied ? "Copied" : "Copy"}
               </button>
             )}
+            <button
+              type="button"
+              className="textHoverPreviewPinButton"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={pinHoverPreview}
+            >
+              Pin
+            </button>
           </div>
           <pre>{hoverPreview.text}</pre>
           {hoverPreview.truncated && <div className="textHoverPreviewFooter">先頭のみ表示しています</div>}
+        </div>,
+        document.body
+      )}
+      {pinnedHoverPreview && createPortal(
+        <div
+          className="pinnedTextPreview"
+          style={{
+            left: pinnedHoverPreview.x,
+            top: pinnedHoverPreview.y,
+            width: pinnedHoverPreview.width,
+            height: pinnedHoverPreview.height
+          }}
+        >
+          <div
+            className="pinnedTextPreviewHeader"
+            onPointerDown={handlePinnedPreviewDragStart}
+            onPointerMove={handlePinnedPreviewDragMove}
+            onPointerUp={handlePinnedPreviewDragEnd}
+            onPointerCancel={handlePinnedPreviewDragEnd}
+          >
+            <span className="pinnedTextPreviewTitle">{pinnedHoverPreview.item?.name || pinnedHoverPreview.item?.path}</span>
+            <button
+              type="button"
+              className="pinnedTextPreviewCloseButton"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => setPinnedHoverPreview(null)}
+            >
+              ×
+            </button>
+          </div>
+          <pre className="pinnedTextPreviewBody">{pinnedHoverPreview.text}</pre>
+          {pinnedHoverPreview.truncated && <div className="pinnedTextPreviewFooter">先頭のみ表示しています</div>}
+          <div
+            className="pinnedTextPreviewResizeHandle"
+            onPointerDown={handlePinnedPreviewResizeStart}
+            onPointerMove={handlePinnedPreviewResizeMove}
+            onPointerUp={handlePinnedPreviewResizeEnd}
+            onPointerCancel={handlePinnedPreviewResizeEnd}
+          />
         </div>,
         document.body
       )}
@@ -1740,6 +1901,14 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
                 onChange={(event) => onUpdate({ ui: { sidebarCollapsed: event.target.checked } })}
               />
               サイドバーを折りたたむ
+            </label>
+            <label className="check settingCheck">
+              <input
+                type="checkbox"
+                checked={current.ui.autoFitWindowWidth ?? true}
+                onChange={(event) => onUpdate({ ui: { autoFitWindowWidth: event.target.checked } })}
+              />
+              UIを自動でフィット
             </label>
             {opacityFields.map(([key, label]) => (
               <label className="rangeField" key={key}>

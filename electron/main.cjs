@@ -78,7 +78,7 @@ const defaultSettings = {
       labelFontFamily: "system",
       showTypeBadge: true,
       showFileName: true,
-      borderRadius: 12,
+      borderRadius: 8,
       borderOpacity: 0.28
     }
   },
