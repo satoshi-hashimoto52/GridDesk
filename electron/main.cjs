@@ -533,6 +533,28 @@ ipcMain.handle("file:previewText", async (_event, targetPath) => {
   }
 });
 
+ipcMain.handle("file:saveText", async (_event, payload) => {
+  try {
+    const targetPath = payload?.path;
+    const text = payload?.text;
+
+    if (!targetPath || typeof targetPath !== "string") return { ok: false, error: "パスが空です" };
+    if (typeof text !== "string") return { ok: false, error: "保存するテキストが不正です" };
+    if (/^https?:\/\//i.test(targetPath)) return { ok: false, error: "URLは編集できません" };
+
+    const ext = path.extname(targetPath).toLowerCase();
+    if (!TEXT_PREVIEW_EXTENSIONS.has(ext)) return { ok: false, error: "編集対象外のファイルです" };
+
+    const stat = await fsp.stat(targetPath);
+    if (!stat.isFile()) return { ok: false, error: "ファイルではありません" };
+
+    await fsp.writeFile(targetPath, text, "utf8");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
 ipcMain.handle("window:setWidth", async (event, width) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
   if (!browserWindow) return { ok: false, error: "BrowserWindow not found" };

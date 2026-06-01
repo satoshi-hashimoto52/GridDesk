@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("gridDesk", {
   getOpenAtLogin: () => ipcRenderer.invoke("system:getOpenAtLogin"),
   setOpenAtLogin: (enabled) => ipcRenderer.invoke("system:setOpenAtLogin", enabled),
   previewTextFile: (targetPath) => ipcRenderer.invoke("file:previewText", targetPath),
+  saveTextFile: (payload) => ipcRenderer.invoke("file:saveText", payload),
   backupWorkspace: (workspacePath) => ipcRenderer.invoke("workspace:backup", workspacePath),
   getSettings: (workspacePath) => ipcRenderer.invoke("settings:get", workspacePath),
   saveSettings: (workspacePath, settings) => ipcRenderer.invoke("settings:save", workspacePath, settings),

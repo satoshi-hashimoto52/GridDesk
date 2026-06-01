@@ -315,9 +315,12 @@ function App() {
   const genreListRef = useRef(null);
   const fitWindowTimer = useRef(null);
   const hoverPreviewRef = useRef(null);
+  const pinnedPreviewRef = useRef(null);
+  const pinnedTextEditorLineNumbersRef = useRef(null);
   const hoverPreviewTimerRef = useRef(null);
   const hoverPreviewCloseTimerRef = useRef(null);
   const hoverPreviewCopiedTimerRef = useRef(null);
+  const pinnedPreviewCopiedTimerRef = useRef(null);
   const pinnedDragRef = useRef(null);
   const pinnedResizeRef = useRef(null);
   const hoverPreviewRequestRef = useRef(0);
@@ -331,6 +334,8 @@ function App() {
   const [hoverPreviewSelection, setHoverPreviewSelection] = useState("");
   const [hoverPreviewCopied, setHoverPreviewCopied] = useState(false);
   const [pinnedHoverPreview, setPinnedHoverPreview] = useState(null);
+  const [pinnedPreviewSelection, setPinnedPreviewSelection] = useState("");
+  const [pinnedPreviewCopied, setPinnedPreviewCopied] = useState(false);
   const [genreDraft, setGenreDraft] = useState({ name: "", cols: 6, rows: 3, accentColor: "#2f7d68", memo: "" });
   const [editGenreId, setEditGenreId] = useState("");
   const [itemForm, setItemForm] = useState(emptyForm());
@@ -347,6 +352,7 @@ function App() {
       if (hoverPreviewTimerRef.current) clearTimeout(hoverPreviewTimerRef.current);
       if (hoverPreviewCloseTimerRef.current) clearTimeout(hoverPreviewCloseTimerRef.current);
       if (hoverPreviewCopiedTimerRef.current) clearTimeout(hoverPreviewCopiedTimerRef.current);
+      if (pinnedPreviewCopiedTimerRef.current) clearTimeout(pinnedPreviewCopiedTimerRef.current);
     };
   }, []);
 
@@ -394,6 +400,40 @@ function App() {
       document.removeEventListener("selectionchange", handleSelectionChange);
     };
   }, [hoverPreview]);
+
+  useEffect(() => {
+    if (!pinnedHoverPreview) return undefined;
+
+    function handleDocumentMouseDown(event) {
+      if (!pinnedPreviewRef.current?.contains(event.target)) {
+        clearPinnedPreviewSelection();
+      }
+    }
+
+    function handleSelectionChange() {
+      if (!window.getSelection?.()?.toString?.().trim()) {
+        clearPinnedPreviewSelection();
+      }
+    }
+
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [pinnedHoverPreview]);
+
+  useEffect(() => {
+    function handleResize() {
+      setPinnedHoverPreview((prev) => prev ? clampPinnedPreviewBounds(prev) : prev);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     const firstGenre = workspace?.genres?.[0]?.id;
@@ -823,9 +863,32 @@ function App() {
     }
   }
 
+  function clearPinnedPreviewSelection() {
+    setPinnedPreviewSelection("");
+    setPinnedPreviewCopied(false);
+    if (pinnedPreviewCopiedTimerRef.current) {
+      clearTimeout(pinnedPreviewCopiedTimerRef.current);
+      pinnedPreviewCopiedTimerRef.current = null;
+    }
+  }
+
   function closeHoverPreview() {
     setHoverPreview(null);
     clearHoverPreviewSelection();
+  }
+
+  function closePinnedHoverPreview() {
+    setPinnedHoverPreview(null);
+    clearPinnedPreviewSelection();
+  }
+
+  function clampPinnedPreviewBounds(next) {
+    const padding = 8;
+    const width = Math.max(280, Math.min(next.width ?? 420, window.innerWidth - padding * 2));
+    const height = Math.max(180, Math.min(next.height ?? 360, window.innerHeight - padding * 2));
+    const x = Math.max(padding, Math.min(next.x ?? padding, window.innerWidth - width - padding));
+    const y = Math.max(padding, Math.min(next.y ?? padding, window.innerHeight - height - padding));
+    return { ...next, x, y, width, height };
   }
 
   function pinHoverPreview(event) {
@@ -833,18 +896,20 @@ function App() {
     event.stopPropagation();
     if (!hoverPreview) return;
 
-    const width = Math.min(520, Math.max(360, window.innerWidth - hoverPreview.x - 12));
-    const height = Math.min(420, Math.max(240, window.innerHeight - hoverPreview.y - 12));
-    setPinnedHoverPreview({
+    setPinnedHoverPreview(clampPinnedPreviewBounds({
       id: String(Date.now()),
       x: hoverPreview.x,
       y: hoverPreview.y,
-      width,
-      height,
+      width: 420,
+      height: 360,
       item: hoverPreview.item,
       text: hoverPreview.text,
-      truncated: hoverPreview.truncated
-    });
+      truncated: hoverPreview.truncated,
+      isEditing: false,
+      draftText: hoverPreview.text,
+      ext: hoverPreview.ext
+    }));
+    clearPinnedPreviewSelection();
     closeHoverPreview();
   }
 
@@ -976,14 +1041,125 @@ function App() {
     }
   }
 
-  function clampPinnedPreviewPosition(x, y, width, height) {
-    const padding = 8;
-    const maxX = Math.max(padding, window.innerWidth - width - padding);
-    const maxY = Math.max(padding, window.innerHeight - height - padding);
-    return {
-      x: Math.max(padding, Math.min(x, maxX)),
-      y: Math.max(padding, Math.min(y, maxY))
-    };
+  function isSelectionInsidePinnedPreview() {
+    const selection = window.getSelection?.();
+    const root = pinnedPreviewRef.current;
+    if (!selection || !root || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    return root.contains(range.startContainer) || root.contains(range.endContainer);
+  }
+
+  function updatePinnedPreviewSelection() {
+    if (pinnedHoverPreview?.isEditing || !isSelectionInsidePinnedPreview()) {
+      clearPinnedPreviewSelection();
+      return;
+    }
+
+    const selectedText = window.getSelection?.()?.toString?.() ?? "";
+    if (!selectedText.trim()) {
+      clearPinnedPreviewSelection();
+      return;
+    }
+
+    setPinnedPreviewSelection(selectedText);
+    setPinnedPreviewCopied(false);
+  }
+
+  async function copyPinnedPreviewSelection(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!pinnedPreviewSelection) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(pinnedPreviewSelection);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = pinnedPreviewSelection;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      setPinnedPreviewCopied(true);
+      if (pinnedPreviewCopiedTimerRef.current) clearTimeout(pinnedPreviewCopiedTimerRef.current);
+      pinnedPreviewCopiedTimerRef.current = window.setTimeout(() => {
+        setPinnedPreviewCopied(false);
+        pinnedPreviewCopiedTimerRef.current = null;
+      }, 1200);
+    } catch (error) {
+      console.error("Failed to copy pinned preview selection", error);
+      alert("コピーに失敗しました");
+    }
+  }
+
+  function canEditPinnedPreview(preview = pinnedHoverPreview) {
+    const targetPath = preview?.item?.path;
+    return Boolean(targetPath && !/^https?:\/\//i.test(targetPath) && preview?.ext);
+  }
+
+  function startPinnedPreviewEdit() {
+    setPinnedHoverPreview((prev) => {
+      if (!prev || !canEditPinnedPreview(prev)) return prev;
+      return {
+        ...prev,
+        isEditing: true,
+        draftText: prev.text ?? ""
+      };
+    });
+    clearPinnedPreviewSelection();
+  }
+
+  async function savePinnedPreviewEdit() {
+    const preview = pinnedHoverPreview;
+    if (!preview) return;
+
+    const targetPath = preview.item?.path;
+    if (!targetPath) {
+      alert("保存先パスがありません");
+      return;
+    }
+
+    try {
+      const nextText = preview.draftText ?? "";
+      if (!api.saveTextFile) {
+        alert("保存機能が利用できません");
+        return;
+      }
+
+      const result = await api.saveTextFile({ path: targetPath, text: nextText });
+      if (result?.ok === false) {
+        alert(result.error || "保存に失敗しました");
+        return;
+      }
+
+      previewCacheRef.current.set(targetPath, {
+        ok: true,
+        text: nextText,
+        truncated: false,
+        size: new Blob([nextText]).size,
+        ext: preview.ext || ""
+      });
+
+      setPinnedHoverPreview((prev) => prev ? {
+        ...prev,
+        text: prev.draftText ?? "",
+        truncated: false,
+        isEditing: false
+      } : prev);
+      clearPinnedPreviewSelection();
+    } catch (error) {
+      console.error("Failed to save pinned preview edit", error);
+      alert("保存に失敗しました");
+    }
+  }
+
+  function handlePinnedEditorScroll(event) {
+    if (pinnedTextEditorLineNumbersRef.current) {
+      pinnedTextEditorLineNumbersRef.current.scrollTop = event.currentTarget.scrollTop;
+    }
   }
 
   function handlePinnedPreviewDragStart(event) {
@@ -1003,13 +1179,9 @@ function App() {
   function handlePinnedPreviewDragMove(event) {
     const drag = pinnedDragRef.current;
     if (!drag || !pinnedHoverPreview || drag.pointerId !== event.pointerId) return;
-    const clamped = clampPinnedPreviewPosition(
-      drag.originX + event.clientX - drag.startX,
-      drag.originY + event.clientY - drag.startY,
-      pinnedHoverPreview.width,
-      pinnedHoverPreview.height
-    );
-    setPinnedHoverPreview((prev) => prev ? { ...prev, x: clamped.x, y: clamped.y } : prev);
+    const nextX = drag.originX + event.clientX - drag.startX;
+    const nextY = drag.originY + event.clientY - drag.startY;
+    setPinnedHoverPreview((prev) => prev ? clampPinnedPreviewBounds({ ...prev, x: nextX, y: nextY }) : prev);
   }
 
   function handlePinnedPreviewDragEnd(event) {
@@ -1038,14 +1210,10 @@ function App() {
   function handlePinnedPreviewResizeMove(event) {
     const resize = pinnedResizeRef.current;
     if (!resize || !pinnedHoverPreview || resize.pointerId !== event.pointerId) return;
-    const minWidth = 280;
-    const minHeight = 180;
-    const maxWidth = Math.max(minWidth, window.innerWidth - pinnedHoverPreview.x - 8);
-    const maxHeight = Math.max(minHeight, window.innerHeight - pinnedHoverPreview.y - 8);
+    const nextWidth = resize.originWidth + event.clientX - resize.startX;
+    const nextHeight = resize.originHeight + event.clientY - resize.startY;
     setPinnedHoverPreview((prev) => prev ? {
-      ...prev,
-      width: Math.max(minWidth, Math.min(resize.originWidth + event.clientX - resize.startX, maxWidth)),
-      height: Math.max(minHeight, Math.min(resize.originHeight + event.clientY - resize.startY, maxHeight))
+      ...clampPinnedPreviewBounds({ ...prev, width: nextWidth, height: nextHeight })
     } : prev);
   }
 
@@ -1123,7 +1291,7 @@ function App() {
                       <LineIcon name="folderOpen" size={16} />
                       <span>カテゴリ管理</span>
                     </div>
-                    <span className="sidebarSectionChevron">‹</span>
+                    <span className="sidebarSectionChevron">&lt;</span>
                   </summary>
                   <div className="sidebarSectionBody">
                     <div className="categoryManageSubsections">
@@ -1134,7 +1302,7 @@ function App() {
                       >
                         <summary className="sidebarSubsectionHeader">
                           <span>カテゴリ追加</span>
-                          <span className="sidebarSectionChevron">›</span>
+                          <span className="sidebarSectionChevron">&lt;</span>
                         </summary>
                         <div className="sidebarSubsectionBody">
                           <label>
@@ -1152,7 +1320,7 @@ function App() {
                       >
                         <summary className="sidebarSubsectionHeader">
                           <span>カテゴリ変更</span>
-                          <span className="sidebarSectionChevron">›</span>
+                          <span className="sidebarSectionChevron">&lt;</span>
                         </summary>
                         <div className="sidebarSubsectionBody">
                           <label>
@@ -1206,7 +1374,7 @@ function App() {
                       <LineIcon name="grid" size={16} />
                       <span>セル登録</span>
                     </div>
-                    <span className="sidebarSectionChevron">‹</span>
+                    <span className="sidebarSectionChevron">&lt;</span>
                   </summary>
                   <div className="sidebarSectionBody">
                     <div className="registerTopActions">
@@ -1257,7 +1425,7 @@ function App() {
                       <Settings size={16} />
                       <span>設定</span>
                     </div>
-                    <span className="sidebarSectionChevron">‹</span>
+                    <span className="sidebarSectionChevron">&lt;</span>
                   </summary>
                   <div className="sidebarSectionBody">
                     <button onClick={() => setSettingsOpen(true)}><Settings size={17} />設定を開く</button>
@@ -1386,6 +1554,7 @@ function App() {
       )}
       {pinnedHoverPreview && createPortal(
         <div
+          ref={pinnedPreviewRef}
           className="pinnedTextPreview"
           style={{
             left: pinnedHoverPreview.x,
@@ -1393,6 +1562,9 @@ function App() {
             width: pinnedHoverPreview.width,
             height: pinnedHoverPreview.height
           }}
+          onMouseUp={updatePinnedPreviewSelection}
+          onKeyUp={updatePinnedPreviewSelection}
+          onWheel={(event) => event.stopPropagation()}
         >
           <div
             className="pinnedTextPreviewHeader"
@@ -1402,17 +1574,67 @@ function App() {
             onPointerCancel={handlePinnedPreviewDragEnd}
           >
             <span className="pinnedTextPreviewTitle">{pinnedHoverPreview.item?.name || pinnedHoverPreview.item?.path}</span>
-            <button
-              type="button"
-              className="pinnedTextPreviewCloseButton"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => setPinnedHoverPreview(null)}
-            >
-              ×
-            </button>
+            <div className="pinnedTextPreviewActions">
+              {pinnedPreviewSelection && !pinnedHoverPreview.isEditing && (
+                <button
+                  type="button"
+                  className="pinnedTextPreviewCopyButton"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={copyPinnedPreviewSelection}
+                >
+                  {pinnedPreviewCopied ? "Copied" : "Copy"}
+                </button>
+              )}
+              <button
+                type="button"
+                className="pinnedTextPreviewEditButton"
+                disabled={!pinnedHoverPreview.isEditing && !canEditPinnedPreview(pinnedHoverPreview)}
+                title={pinnedHoverPreview.isEditing ? "保存して閲覧に戻る" : "編集する"}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (pinnedHoverPreview.isEditing) {
+                    savePinnedPreviewEdit();
+                  } else {
+                    startPinnedPreviewEdit();
+                  }
+                }}
+              >
+                {pinnedHoverPreview.isEditing ? <LineIcon name="note" size={14} /> : <Pencil size={14} />}
+              </button>
+              <button
+                type="button"
+                className="pinnedTextPreviewCloseButton"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={closePinnedHoverPreview}
+              >
+                ×
+              </button>
+            </div>
           </div>
-          <pre className="pinnedTextPreviewBody">{pinnedHoverPreview.text}</pre>
-          {pinnedHoverPreview.truncated && <div className="pinnedTextPreviewFooter">先頭のみ表示しています</div>}
+          {pinnedHoverPreview.isEditing ? (
+            <div className="pinnedTextEditor">
+              <div ref={pinnedTextEditorLineNumbersRef} className="pinnedTextEditorLineNumbers">
+                {(pinnedHoverPreview.draftText ?? "").split(/\r?\n/).map((_, index) => (
+                  <div key={index}>{index + 1}</div>
+                ))}
+              </div>
+              <textarea
+                className="pinnedTextEditorTextarea"
+                value={pinnedHoverPreview.draftText ?? ""}
+                spellCheck={false}
+                onScroll={handlePinnedEditorScroll}
+                onChange={(event) => {
+                  const nextText = event.target.value;
+                  setPinnedHoverPreview((prev) => prev ? { ...prev, draftText: nextText } : prev);
+                }}
+              />
+            </div>
+          ) : (
+            <pre className="pinnedTextPreviewBody">{pinnedHoverPreview.text}</pre>
+          )}
+          {pinnedHoverPreview.truncated && !pinnedHoverPreview.isEditing && <div className="pinnedTextPreviewFooter">先頭のみ表示しています</div>}
           <div
             className="pinnedTextPreviewResizeHandle"
             onPointerDown={handlePinnedPreviewResizeStart}

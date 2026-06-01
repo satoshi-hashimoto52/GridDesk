@@ -536,6 +536,9 @@ label {
 .sidebarSectionChevron {
   margin-left: auto;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 18px;
   line-height: 1;
   opacity: 0.72;
@@ -543,7 +546,8 @@ label {
   transition: transform 0.14s ease, opacity 0.14s ease;
 }
 
-.sidebarSection[open] .sidebarSectionChevron {
+.sidebarSection[open] .sidebarSectionChevron,
+.sidebarSubsection[open] .sidebarSectionChevron {
   transform: rotate(-90deg);
   opacity: 0.95;
 }
@@ -602,10 +606,6 @@ label {
   flex-direction: column;
   gap: 9px;
   padding: 8px 9px 10px;
-}
-
-.sidebarSubsection[open] .sidebarSectionChevron {
-  transform: rotate(90deg);
 }
 
 .panelTitle {
@@ -1187,6 +1187,8 @@ label {
 
 .textHoverPreviewCopyButton,
 .textHoverPreviewPinButton,
+.pinnedTextPreviewCopyButton,
+.pinnedTextPreviewEditButton,
 .pinnedTextPreviewCloseButton {
   flex-shrink: 0;
   border: 1px solid rgba(60, 70, 80, 0.34);
@@ -1202,14 +1204,36 @@ label {
 
 .textHoverPreviewCopyButton:hover,
 .textHoverPreviewPinButton:hover,
+.pinnedTextPreviewCopyButton:hover,
+.pinnedTextPreviewEditButton:hover,
 .pinnedTextPreviewCloseButton:hover {
   background: rgba(255, 255, 255, 0.38);
 }
 
 .textHoverPreviewCopyButton:active,
 .textHoverPreviewPinButton:active,
+.pinnedTextPreviewCopyButton:active,
+.pinnedTextPreviewEditButton:active,
 .pinnedTextPreviewCloseButton:active {
   transform: translateY(1px);
+}
+
+.pinnedTextPreviewEditButton {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pinnedTextPreviewEditButton:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.pinnedTextPreviewEditButton:disabled:hover {
+  background: rgba(255, 255, 255, 0.26);
 }
 
 .textHoverPreview pre {
@@ -1299,6 +1323,13 @@ label {
   white-space: nowrap;
 }
 
+.pinnedTextPreviewActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .pinnedTextPreviewBody {
   flex: 1;
   min-height: 0;
@@ -1311,6 +1342,45 @@ label {
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
+}
+
+.pinnedTextEditor {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  overflow: hidden;
+}
+
+.pinnedTextEditorLineNumbers {
+  overflow: hidden;
+  padding: 10px 7px;
+  border-right: 1px solid var(--gd-border-subtle);
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(60, 70, 80, 0.65);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+  user-select: none;
+}
+
+.pinnedTextEditorTextarea {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  resize: none;
+  outline: none;
+  padding: 10px;
+  background: transparent;
+  color: inherit;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre;
+  overflow: auto;
 }
 
 .pinnedTextPreviewFooter {
