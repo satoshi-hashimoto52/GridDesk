@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld("gridDesk", {
   restoreAllCells: (workspacePath) => ipcRenderer.invoke("cell:restoreAll", workspacePath),
   openPath: (targetPath) => ipcRenderer.invoke("path:open", targetPath),
   revealPath: (targetPath) => ipcRenderer.invoke("path:reveal", targetPath),
+  checkPathExists: (targetPath) => ipcRenderer.invoke("path:checkExists", targetPath),
+  checkPathExistsBulk: (paths) => ipcRenderer.invoke("path:checkExistsBulk", paths),
   openTarget: (workspacePath, item) => ipcRenderer.invoke("target:open", workspacePath, item),
   revealTarget: (workspacePath, item) => ipcRenderer.invoke("target:reveal", workspacePath, item)
 });

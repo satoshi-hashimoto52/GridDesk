@@ -873,6 +873,47 @@ ipcMain.handle("path:reveal", async (_event, targetPath) => {
   }
 });
 
+ipcMain.handle("path:checkExists", async (_event, targetPath) => {
+  try {
+    if (!targetPath || typeof targetPath !== "string") {
+      return { ok: false, exists: false, error: "パスが空です" };
+    }
+    if (/^https?:\/\//i.test(targetPath)) {
+      return { ok: true, exists: true, skipped: true, reason: "URLはチェック対象外です" };
+    }
+    await fsp.access(targetPath);
+    return { ok: true, exists: true };
+  } catch (error) {
+    return { ok: true, exists: false, error: String(error?.message ?? error) };
+  }
+});
+
+ipcMain.handle("path:checkExistsBulk", async (_event, paths) => {
+  try {
+    if (!Array.isArray(paths)) return { ok: false, error: "paths must be an array" };
+    const results = [];
+    for (const targetPath of paths) {
+      if (!targetPath || typeof targetPath !== "string") {
+        results.push({ path: targetPath, exists: false, error: "パスが空です" });
+        continue;
+      }
+      if (/^https?:\/\//i.test(targetPath)) {
+        results.push({ path: targetPath, exists: true, skipped: true, reason: "URL" });
+        continue;
+      }
+      try {
+        await fsp.access(targetPath);
+        results.push({ path: targetPath, exists: true });
+      } catch (error) {
+        results.push({ path: targetPath, exists: false, error: String(error?.message ?? error) });
+      }
+    }
+    return { ok: true, results };
+  } catch (error) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
 ipcMain.handle("target:open", async (_event, workspacePath, item) => {
   try {
     const targetPath = typeof item === "string" ? item : item?.path;

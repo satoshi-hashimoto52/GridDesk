@@ -1,64 +1,59 @@
 import React from "react";
 
-export const LINE_ICON_OPTIONS = [
-  "folder",
-  "folderOpen",
-  "file",
-  "fileText",
-  "fileCode",
-  "fileArchive",
-  "fileImage",
-  "fileSpreadsheet",
-  "table",
-  "image",
-  "appWindow",
-  "terminal",
-  "link",
-  "globe",
-  "note",
-  "book",
-  "database",
-  "server",
-  "hardDrive",
-  "cloud",
-  "settings",
-  "tool",
-  "wrench",
-  "cpu",
-  "box",
-  "package",
-  "layers",
-  "grid",
-  "layout",
-  "monitor",
-  "laptop",
-  "keyboard",
-  "mouse",
-  "printer",
-  "camera",
-  "search",
-  "star",
-  "pin",
-  "tag",
-  "bookmark",
-  "home",
-  "briefcase",
-  "clipboard",
-  "calendar",
-  "clock",
-  "mail",
-  "user",
-  "users",
-  "lock",
-  "shield",
-  "alert",
-  "check",
-  "x",
-  "plus",
-  "minus",
-  "arrowRight",
-  "arrowDown"
+export const LINE_ICON_GROUPS = [
+  {
+    id: "series1",
+    label: "シリーズ1",
+    icons: [
+      "folder", "folderOpen", "file", "fileText", "fileCode", "fileImage",
+      "fileSpreadsheet", "fileArchive", "filePdf", "filePlus", "fileMinus",
+      "fileSearch", "document", "documents", "book", "notebook", "memo",
+      "clipboard", "paperclip", "tag", "bookmark", "archive", "box", "package"
+    ]
+  },
+  {
+    id: "series2",
+    label: "シリーズ2",
+    icons: [
+      "diagram", "blueprint", "circuit", "chip", "cpu", "layers", "grid",
+      "layout", "ruler", "compass", "cube", "blocks", "component", "plug",
+      "cable", "terminalBlock", "panel", "wiring", "tool", "wrench", "hammer",
+      "gear", "settings", "sliders"
+    ]
+  },
+  {
+    id: "series3",
+    label: "シリーズ3",
+    icons: [
+      "code", "terminal", "database", "server", "network", "cloud", "api",
+      "branch", "git", "bug", "shield", "lock", "key", "monitor", "laptop",
+      "keyboard", "mouse", "hardDrive", "download", "upload", "sync", "refresh",
+      "search", "filter"
+    ]
+  },
+  {
+    id: "series4",
+    label: "シリーズ4",
+    icons: [
+      "briefcase", "calendar", "clock", "mail", "user", "users", "task",
+      "check", "checkCircle", "x", "xCircle", "alert", "warning", "info",
+      "star", "pin", "flag", "home", "building", "printer", "scanner",
+      "chart", "table", "list"
+    ]
+  },
+  {
+    id: "series5",
+    label: "シリーズ5",
+    icons: [
+      "image", "camera", "movie", "music", "palette", "eye", "eyeOff",
+      "link", "globe", "map", "location", "lightbulb", "spark", "heart",
+      "copy", "edit", "pencil", "note", "trash", "plus", "minus", "arrowRight",
+      "arrowLeft", "arrowUp", "arrowDown"
+    ]
+  }
 ];
+
+export const LINE_ICON_OPTIONS = Array.from(new Set(LINE_ICON_GROUPS.flatMap((group) => group.icons)));
 
 const fileShape = (
   <>
@@ -406,6 +401,74 @@ const iconPaths = {
     </>
   )
 };
+
+Object.assign(iconPaths, {
+  filePdf: iconPaths.fileText,
+  filePlus: iconPaths.file,
+  fileMinus: iconPaths.file,
+  fileSearch: iconPaths.search,
+  document: iconPaths.fileText,
+  documents: iconPaths.fileArchive,
+  notebook: iconPaths.book,
+  memo: iconPaths.note,
+  paperclip: iconPaths.link,
+  archive: iconPaths.fileArchive,
+  diagram: iconPaths.layout,
+  blueprint: iconPaths.fileImage,
+  circuit: iconPaths.grid,
+  chip: iconPaths.cpu,
+  ruler: iconPaths.layout,
+  compass: iconPaths.search,
+  cube: iconPaths.box,
+  blocks: iconPaths.layers,
+  component: iconPaths.box,
+  plug: iconPaths.tool,
+  cable: iconPaths.link,
+  terminalBlock: iconPaths.terminal,
+  panel: iconPaths.layout,
+  wiring: iconPaths.link,
+  hammer: iconPaths.tool,
+  gear: iconPaths.settings,
+  sliders: iconPaths.settings,
+  code: iconPaths.fileCode,
+  network: iconPaths.server,
+  api: iconPaths.cloud,
+  branch: iconPaths.arrowRight,
+  git: iconPaths.branch,
+  bug: iconPaths.alert,
+  key: iconPaths.lock,
+  download: iconPaths.arrowDown,
+  upload: iconPaths.arrowRight,
+  sync: iconPaths.refresh ?? iconPaths.arrowRight,
+  refresh: iconPaths.arrowRight,
+  filter: iconPaths.search,
+  task: iconPaths.check,
+  checkCircle: iconPaths.check,
+  xCircle: iconPaths.x,
+  warning: iconPaths.alert,
+  info: iconPaths.alert,
+  flag: iconPaths.bookmark,
+  building: iconPaths.home,
+  scanner: iconPaths.printer,
+  chart: iconPaths.table,
+  list: iconPaths.clipboard,
+  movie: iconPaths.image,
+  music: iconPaths.note,
+  palette: iconPaths.image,
+  eye: iconPaths.search,
+  eyeOff: iconPaths.x,
+  map: iconPaths.globe,
+  location: iconPaths.pin,
+  lightbulb: iconPaths.alert,
+  spark: iconPaths.star,
+  heart: iconPaths.star,
+  copy: iconPaths.documents,
+  edit: iconPaths.note,
+  pencil: iconPaths.note,
+  trash: iconPaths.x,
+  arrowLeft: iconPaths.arrowRight,
+  arrowUp: iconPaths.arrowDown
+});
 
 export const lineIconNames = LINE_ICON_OPTIONS;
 

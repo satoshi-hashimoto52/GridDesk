@@ -15,7 +15,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
-import LineIcon, { LINE_ICON_OPTIONS } from "./components/LineIcon.jsx";
+import LineIcon, { LINE_ICON_GROUPS, LINE_ICON_OPTIONS } from "./components/LineIcon.jsx";
 import { hexToRgba } from "./utils/color.js";
 import "./styles.css";
 
@@ -220,6 +220,21 @@ function normalizeExtensionIconTypes(rawExtensionIconTypes) {
   return extensionIconTypes;
 }
 
+function normalizeHexColor(value) {
+  const raw = String(value || "").trim();
+  if (raw === "") return "";
+  const withoutHash = raw.startsWith("#") ? raw.slice(1) : raw;
+  if (/^[0-9a-fA-F]{3}$/.test(withoutHash)) {
+    return `#${withoutHash
+      .split("")
+      .map((ch) => ch + ch)
+      .join("")
+      .toUpperCase()}`;
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(withoutHash)) return `#${withoutHash.toUpperCase()}`;
+  return null;
+}
+
 function getIconTypeSetting(type, settings) {
   const iconTypes = settings?.iconTypes || {};
   return iconTypes[type] || iconTypes.default || defaultIconTypes.default;
@@ -377,6 +392,8 @@ function App() {
   const fitWindowTimer = useRef(null);
   const hoverPreviewRef = useRef(null);
   const pinnedPreviewRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const itemElementRefs = useRef(new Map());
   const pinnedTextEditorLineNumbersRef = useRef(null);
   const hoverPdfCanvasRef = useRef(null);
   const pinnedPdfCanvasLeftRef = useRef(null);
@@ -412,6 +429,11 @@ function App() {
   const [pinnedPreviewCopied, setPinnedPreviewCopied] = useState(false);
   const [hoverPdfPreview, setHoverPdfPreview] = useState(null);
   const [pinnedPdfPreview, setPinnedPdfPreview] = useState(null);
+  const [pathCheckResults, setPathCheckResults] = useState({});
+  const [pathCheckRunning, setPathCheckRunning] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [genreDraft, setGenreDraft] = useState({ name: "", cols: 6, rows: 3, accentColor: "#2f7d68", memo: "" });
   const [editGenreId, setEditGenreId] = useState("");
   const [itemForm, setItemForm] = useState(emptyForm());
@@ -616,6 +638,20 @@ function App() {
   }, [pinnedPdfPreview]);
 
   useEffect(() => {
+    function handleGlobalSearchShortcut(event) {
+      const isSearchShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f";
+      if (!isSearchShortcut || pinnedPdfPreview) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }
+    window.addEventListener("keydown", handleGlobalSearchShortcut, true);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalSearchShortcut, true);
+    };
+  }, [pinnedPdfPreview]);
+
+  useEffect(() => {
     const firstGenre = workspace?.genres?.[0]?.id;
     if (firstGenre && !selectedGenreId) setSelectedGenreId(String(firstGenre));
   }, [workspace, selectedGenreId]);
@@ -693,6 +729,10 @@ function App() {
     return map;
   }, [workspace]);
 
+  const highlightedItemId = searchResults[activeSearchIndex]?.item?.id ?? null;
+  const brokenPathCount = Object.values(pathCheckResults).filter((result) => result.exists === false).length;
+  const checkedPathCount = Object.keys(pathCheckResults).length;
+
   const disabledByGenre = useMemo(() => {
     const map = new Map();
     for (const cell of workspace?.disabledCells || []) {
@@ -708,6 +748,107 @@ function App() {
 
   function showError(error) {
     setMessage(error?.message || String(error));
+  }
+
+  function normalizeSearchText(value) {
+    return String(value ?? "").toLowerCase();
+  }
+
+  function getItemSearchText(item) {
+    const category = genresById.get(String(item?.genre_id ?? item?.category_id ?? ""));
+    return [
+      item?.name,
+      item?.display_name,
+      getPathBaseName(item?.path ?? ""),
+      item?.path,
+      getExtensionLabel(item),
+      item?.item_type,
+      item?.type,
+      category?.name
+    ].map(normalizeSearchText).join(" ");
+  }
+
+  function activateSearchResult(result) {
+    const categoryId = result?.categoryId;
+    if (categoryId) {
+      const genre = genresById.get(String(categoryId));
+      if (genre?.collapsed) updateGenre({ id: categoryId, collapsed: 0 });
+    }
+    window.setTimeout(() => scrollToSearchResult(result), 90);
+  }
+
+  function scrollToSearchResult(result) {
+    const itemId = result?.item?.id;
+    if (!itemId) return;
+    window.requestAnimationFrame(() => {
+      const element = itemElementRefs.current.get(String(itemId));
+      element?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    });
+  }
+
+  function runSearch(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      setSearchResults([]);
+      setActiveSearchIndex(0);
+      return;
+    }
+    const results = (workspace?.items || [])
+      .filter((item) => (item.enabled ?? 1) !== 0)
+      .filter((item) => getItemSearchText(item).includes(q))
+      .map((item) => ({
+        item,
+        categoryId: item.genre_id ?? item.category_id,
+        x: item.x,
+        y: item.y
+      }));
+    setSearchResults(results);
+    setActiveSearchIndex(0);
+    if (results[0]) activateSearchResult(results[0]);
+  }
+
+  function goNextSearchResult() {
+    if (!searchResults.length) return;
+    const nextIndex = (activeSearchIndex + 1) % searchResults.length;
+    setActiveSearchIndex(nextIndex);
+    activateSearchResult(searchResults[nextIndex]);
+  }
+
+  function goPrevSearchResult() {
+    if (!searchResults.length) return;
+    const nextIndex = (activeSearchIndex - 1 + searchResults.length) % searchResults.length;
+    setActiveSearchIndex(nextIndex);
+    activateSearchResult(searchResults[nextIndex]);
+  }
+
+  async function runPathCheck() {
+    const checkTargets = (workspace?.items || []).filter((item) => {
+      if (!item?.path) return false;
+      if (/^https?:\/\//i.test(item.path)) return false;
+      return (item.enabled ?? 1) !== 0;
+    });
+    setPathCheckRunning(true);
+    try {
+      const result = await api.checkPathExistsBulk?.(checkTargets.map((item) => item.path));
+      if (!result?.ok) {
+        alert(result?.error || "リンク切れチェックに失敗しました");
+        return;
+      }
+      const checkedAt = Date.now();
+      const next = {};
+      checkTargets.forEach((item, index) => {
+        const check = result.results?.[index];
+        next[item.id] = {
+          exists: Boolean(check?.exists),
+          skipped: Boolean(check?.skipped),
+          error: check?.error ?? "",
+          checkedAt
+        };
+      });
+      setPathCheckResults(next);
+    } finally {
+      setPathCheckRunning(false);
+    }
   }
 
   function requestFitWindowSize() {
@@ -1887,6 +2028,23 @@ function App() {
 
             {!settings.ui.sidebarCollapsed && (
               <div className="sidebarScroll">
+                <div className="searchPanel">
+                  <input
+                    ref={searchInputRef}
+                    value={searchQuery}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSearchQuery(value);
+                      runSearch(value);
+                    }}
+                    placeholder="検索"
+                  />
+                  <span className="searchMeta">
+                    {searchResults.length ? `${activeSearchIndex + 1} / ${searchResults.length}` : "0 / 0"}
+                  </span>
+                  <button type="button" onClick={goPrevSearchResult} disabled={!searchResults.length}>↑</button>
+                  <button type="button" onClick={goNextSearchResult} disabled={!searchResults.length}>↓</button>
+                </div>
                 <details
                   className="sidebarSection"
                   open={sidebarSectionOpen("genreManager")}
@@ -2035,6 +2193,12 @@ function App() {
                   </summary>
                   <div className="sidebarSectionBody">
                     <button onClick={() => setSettingsOpen(true)}><Settings size={17} />設定を開く</button>
+                    <button type="button" onClick={runPathCheck} disabled={pathCheckRunning}>
+                      {pathCheckRunning ? "チェック中..." : "リンク切れチェック"}
+                    </button>
+                    {checkedPathCount > 0 && (
+                      <div className="pathCheckSummary">リンク切れ: {brokenPathCount} 件</div>
+                    )}
                     <div className="workspaceActionButtons">
                       <button type="button" onClick={() => openWorkspace(api.createWorkspace)}><Plus size={17} />New</button>
                       <button type="button" onClick={() => openWorkspace(api.openWorkspace)}><FolderOpen size={17} />Open</button>
@@ -2061,6 +2225,9 @@ function App() {
                     deleteCellMode={deleteCellMode}
                     dragTargetCell={dragTargetCell}
                     settings={settings}
+                    pathCheckResults={pathCheckResults}
+                    highlightedItemId={highlightedItemId}
+                    itemElementRefs={itemElementRefs}
                     onSelectGenre={() => {
                       setSelectedGenreId(String(genre.id));
                       setItemForm((current) => ({ ...current, genreId: String(genre.id) }));
@@ -2381,6 +2548,9 @@ function GenreGrid({
   deleteCellMode,
   dragTargetCell,
   settings,
+  pathCheckResults,
+  highlightedItemId,
+  itemElementRefs,
   onSelectGenre,
   onToggleCollapsed,
   onCellClick,
@@ -2454,6 +2624,9 @@ function GenreGrid({
                   deleteCellMode={deleteCellMode}
                   dragTarget={dragTargetCell?.genreId === genre.id && dragTargetCell?.x === x && dragTargetCell?.y === y}
                   settings={settings}
+                  pathCheck={item ? pathCheckResults[item.id] : null}
+                  searchHighlighted={item?.id === highlightedItemId}
+                  itemElementRefs={itemElementRefs}
                   onClick={() => onCellClick(x, y, disabled)}
                   onDropPath={(targetPath) => onDropPath(x, y, targetPath)}
                   onMoveItem={(draggedItem) => onMoveItem(draggedItem, x, y)}
@@ -2486,6 +2659,9 @@ function Cell({
   deleteCellMode,
   dragTarget,
   settings,
+  pathCheck,
+  searchHighlighted,
+  itemElementRefs,
   onClick,
   onDropPath,
   onMoveItem,
@@ -2509,10 +2685,13 @@ function Cell({
   const extensionLabel = getExtensionLabel(item);
   const showTypeBadge = settings?.ui?.cell?.showTypeBadge ?? true;
   const showFileName = settings?.ui?.cell?.showFileName ?? true;
+  const isBrokenPath = pathCheck && pathCheck.exists === false;
   const iconCardClassName = [
     "launcherItem",
     "iconCard",
     deleteCellMode ? "deleteMode" : "",
+    isBrokenPath ? "brokenPath" : "",
+    searchHighlighted ? "searchHighlight" : "",
     showTypeBadge ? "hasTypeBadge" : "noTypeBadge",
     showFileName ? "hasFileName" : "noFileName"
   ].filter(Boolean).join(" ");
@@ -2580,6 +2759,14 @@ function Cell({
     >
       {item && !disabled && (
         <button
+          ref={(element) => {
+            if (!itemElementRefs) return;
+            if (element) {
+              itemElementRefs.current.set(String(item.id), element);
+            } else {
+              itemElementRefs.current.delete(String(item.id));
+            }
+          }}
           className={iconCardClassName}
           style={{ "--gd-item-icon-bg": iconBackground }}
           draggable
@@ -2778,6 +2965,8 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerTarget, setIconPickerTarget] = useState(null);
   const [iconPickerQuery, setIconPickerQuery] = useState("");
+  const [iconColorHexDrafts, setIconColorHexDrafts] = useState({});
+  const [iconColorHexErrors, setIconColorHexErrors] = useState({});
   const [settingsPanelPosition, setSettingsPanelPosition] = useState({ x: 80, y: 48 });
   const settingsPanelRef = useRef(null);
   const settingsPanelDragRef = useRef(null);
@@ -2798,9 +2987,13 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
       setting
     }))
   ];
-  const filteredIconOptions = SORTED_LINE_ICON_OPTIONS.filter((iconName) =>
-    iconName.toLowerCase().includes(iconPickerQuery.trim().toLowerCase())
-  );
+  const normalizedIconPickerQuery = iconPickerQuery.trim().toLowerCase();
+  const visibleIconGroups = LINE_ICON_GROUPS
+    .map((group) => ({
+      ...group,
+      icons: group.icons.filter((iconName) => iconName.toLowerCase().includes(normalizedIconPickerQuery))
+    }))
+    .filter((group) => group.icons.length > 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -2898,6 +3091,44 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
       return;
     }
     onUpdateExtensionIconType(row.key, patch);
+  }
+
+  function getIconSettingRowKey(row) {
+    return `${row.rowType}:${row.key}`;
+  }
+
+  function updateIconRowStrokeColor(row, color) {
+    const rowKey = getIconSettingRowKey(row);
+    updateIconSettingRow(row, { strokeColor: color });
+    setIconColorHexDrafts((prev) => ({ ...prev, [rowKey]: color }));
+    setIconColorHexErrors((prev) => ({ ...prev, [rowKey]: "" }));
+  }
+
+  function updateIconRowStrokeHexInput(row, value) {
+    const rowKey = getIconSettingRowKey(row);
+    setIconColorHexDrafts((prev) => ({ ...prev, [rowKey]: value }));
+    const normalized = normalizeHexColor(value);
+    if (normalized === null) return;
+    setIconColorHexErrors((prev) => ({ ...prev, [rowKey]: "" }));
+    if (normalized !== "") updateIconSettingRow(row, { strokeColor: normalized });
+  }
+
+  function commitIconRowStrokeHexInput(row, currentColor) {
+    const rowKey = getIconSettingRowKey(row);
+    const value = iconColorHexDrafts[rowKey] ?? currentColor;
+    const normalized = normalizeHexColor(value);
+    if (normalized === null) {
+      setIconColorHexErrors((prev) => ({
+        ...prev,
+        [rowKey]: "線色HEXは #RGB、RGB、#RRGGBB、RRGGBB の形式で入力してください。"
+      }));
+      return;
+    }
+    setIconColorHexErrors((prev) => ({ ...prev, [rowKey]: "" }));
+    if (normalized !== "") {
+      updateIconSettingRow(row, { strokeColor: normalized });
+      setIconColorHexDrafts((prev) => ({ ...prev, [rowKey]: normalized }));
+    }
   }
 
   function clampSettingsPanelPosition(x, y) {
@@ -3098,6 +3329,7 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
                 <span>種類/拡張子</span>
                 <span>アイコン</span>
                 <span>線色</span>
+                <span>線色HEX</span>
                 <span>背景色</span>
                 <span>背景透過</span>
                 <span>プレビュー</span>
@@ -3106,6 +3338,11 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
               <div className="extensionIconList">
                 {iconSettingRows.map((row) => {
                   const type = row.setting;
+                  const strokeColor = type.strokeColor || "#000000";
+                  const colorPickerStrokeColor = (normalizeHexColor(strokeColor) || "#000000").toLowerCase();
+                  const rowKey = getIconSettingRowKey(row);
+                  const strokeColorHexValue = iconColorHexDrafts[rowKey] ?? strokeColor;
+                  const strokeColorHexError = iconColorHexErrors[rowKey];
                   return (
                     <div className={`iconTypeRow extensionIconRow ${row.fixed ? "fixed" : ""}`} key={`${row.rowType}:${row.key}`}>
                       <code>{row.label}</code>
@@ -3115,7 +3352,22 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
                         </span>
                         <button type="button" onClick={() => openIconPicker(row)}>アイコンを選択</button>
                       </div>
-                      <input type="color" value={type.strokeColor} onChange={(event) => updateIconSettingRow(row, { strokeColor: event.target.value })} />
+                      <input type="color" value={colorPickerStrokeColor} onChange={(event) => updateIconRowStrokeColor(row, event.target.value)} />
+                      <div className="iconColorHexField">
+                        <input
+                          type="text"
+                          className={`iconColorHexInput ${strokeColorHexError ? "invalid" : ""}`}
+                          value={strokeColorHexValue}
+                          onChange={(event) => updateIconRowStrokeHexInput(row, event.target.value)}
+                          onBlur={() => commitIconRowStrokeHexInput(row, strokeColor)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") event.currentTarget.blur();
+                          }}
+                          onFocus={(event) => event.currentTarget.select()}
+                          spellCheck={false}
+                        />
+                        {strokeColorHexError && <span className="iconColorHexError">{strokeColorHexError}</span>}
+                      </div>
                       <input type="color" value={type.backgroundColor} onChange={(event) => updateIconSettingRow(row, { backgroundColor: event.target.value })} />
                       <label className="miniRange">
                         <input
@@ -3260,20 +3512,27 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
                 placeholder="アイコンを検索"
                 autoFocus
               />
-              <div className="iconPickerGrid">
-                {filteredIconOptions.map((iconName) => (
-                  <button
-                    key={iconName}
-                    type="button"
-                    className={`iconPickerOption ${isIconPickerSelected(iconName) ? "selected" : ""}`}
-                    title={iconName}
-                    onClick={() => {
-                      applyIconPickerSelection(iconName);
-                      setIconPickerOpen(false);
-                    }}
-                  >
-                    <LineIcon name={iconName} size={22} />
-                  </button>
+              <div className="iconPickerGroupList">
+                {visibleIconGroups.map((group) => (
+                  <section key={group.id} className="iconPickerGroup">
+                    <div className="iconPickerGroupTitle">{group.label}</div>
+                    <div className="iconPickerGrid">
+                      {group.icons.map((iconName) => (
+                        <button
+                          key={iconName}
+                          type="button"
+                          className={`iconPickerOption ${isIconPickerSelected(iconName) ? "selected" : ""}`}
+                          title={iconName}
+                          onClick={() => {
+                            applyIconPickerSelection(iconName);
+                            setIconPickerOpen(false);
+                          }}
+                        >
+                          <LineIcon name={iconName} size={22} />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             </div>
