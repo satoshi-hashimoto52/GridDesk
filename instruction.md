@@ -1,151 +1,439 @@
-既存のWebアプリについて、以下2点を修正してください。
+# GridDesk 修正指示：検索ハイライトの蛍光グリーン枠を明確にする
 
-対象：
-- 線色HEX入力欄
-- アイコン設定の拡張子一覧表示部分
+今回は以下のみ対応してください。
 
-修正内容：
+* 検索時のアイコンハイライトがほぼ見えないため、アイコン枠の蛍光グリーン発光を明確にする
 
-1. 線色HEX入力欄の入力制限を緩和する
+## 禁止事項
 
-現在、線色HEXの入力欄で外部からコピーしたHEXカラーコードを貼り付けた際や、自由入力した際に入力できない、または制限されすぎている可能性があります。
+今回は以下を触らないでください。
 
-以下のように修正してください。
+* 検索ロジック
+* 検索結果スクロール処理
+* ファイル/フォルダ起動処理
+* 右クリックメニュー
+* セル登録ロジック
+* DBスキーマ
+* PDFプレビュー
+* テキストホバー/ピン留め機能
+* アイコン設定ロジック
+* 自動フィット処理
 
-要件：
-- 外部からのコピー＆ペーストを許可する
-- キーボードからの自由入力を許可する
-- `#000000` の形式も入力できるようにする
-- `000000` の形式も入力できるようにする
-- 入力途中の不完全な値も許可する
-  - 例：`#`
-  - 例：`#F`
-  - 例：`#FF`
-  - 例：`FF00`
-- 入力中は厳しく弾かない
-- 確定時、保存時、または反映時にのみHEXとして妥当か検証する
-- 妥当なHEXカラーの場合のみ線色へ反映する
-- 不正な値の場合は、入力欄は消さずにエラーメッセージを表示する
-- コンソールエラーが出ないようにする
+---
 
-HEXカラーの妥当条件：
-- `#RGB`
-- `RGB`
-- `#RRGGBB`
-- `RRGGBB`
+# 1. 現状
 
-例：
-- `#fff` はOK
-- `fff` はOK
-- `#ffffff` はOK
-- `ffffff` はOK
-- `#12ABEF` はOK
-- `12ABEF` はOK
-- `#GGGGGG` はNG
-- `red` はNG
-- 空欄は未設定として扱う
+検索結果のアイコン枠に蛍光グリーンのハイライトを付けたが、実画面ではほぼ見えていません。
 
-実装方針：
-- inputイベントで文字入力を強制的にブロックしない
-- pasteイベントを preventDefault しない
-- HTML側で `maxlength` や `pattern` が厳しすぎる場合は見直す
-- JavaScript側の keydown / input / change / blur 処理で入力を妨げている箇所があれば修正する
-- 値を線色へ反映する直前に normalizeHexColor 関数で正規化する
+原因候補:
 
-以下のような関数を追加または同等の処理を実装してください。
+* `outline` が透明背景上で見えにくい
+* `box-shadow` が弱い
+* `.iconCard` の既存背景・枠線に負けている
+* 親要素の `overflow: hidden` で外側の発光が切れている
+* 検索ハイライト対象が `.iconCard` ではなく別要素に付いている
+* CSS優先度が不足している
 
-function normalizeHexColor(value) {
-  const raw = String(value || "").trim();
+---
 
-  if (raw === "") {
-    return "";
+# 2. 変更後仕様
+
+検索結果のアイコンは、背景を塗らずに、**枠だけが蛍光グリーンで明確に点滅発光**するようにしてください。
+
+期待表示:
+
+```text
+アイコン背景: 既存のまま
+アイコン枠: 蛍光グリーン
+外側発光: 強め
+内側発光: あり
+点滅: あり
+```
+
+---
+
+# 3. CSS修正方針
+
+`outline` だけでは弱いので、`.searchHighlight::before` と `.searchHighlight::after` を使って、内側・外側の発光リングを重ねてください。
+
+## 重要
+
+`.iconCard` 系には `position: relative` が必要です。
+
+```css
+.iconCard,
+.launcherItem,
+.itemCard {
+  position: relative;
+}
+```
+
+---
+
+# 4. 既存 searchHighlight CSS を置き換える
+
+現在の `.searchHighlight` 関連CSSを探してください。
+
+検索:
+
+```text
+searchHighlight
+searchHighlightGreenPulse
+searchHighlightBorderPulse
+```
+
+古い検索ハイライトCSSは、今回のCSSに置き換えてください。
+
+---
+
+# 5. 新しいCSS
+
+以下を追加・置換してください。
+
+```css
+.iconCard.searchHighlight,
+.launcherItem.searchHighlight,
+.itemCard.searchHighlight {
+  position: relative;
+  border-color: rgba(57, 255, 20, 1) !important;
+  outline: none !important;
+  box-shadow:
+    inset 0 0 0 2px rgba(57, 255, 20, 0.95),
+    0 0 0 2px rgba(57, 255, 20, 0.85),
+    0 0 12px rgba(57, 255, 20, 0.95),
+    0 0 26px rgba(57, 255, 20, 0.70),
+    0 0 44px rgba(57, 255, 20, 0.42) !important;
+  animation: searchHighlightNeonPulse 0.85s ease-in-out infinite;
+  isolation: isolate;
+}
+
+.iconCard.searchHighlight::before,
+.launcherItem.searchHighlight::before,
+.itemCard.searchHighlight::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 2px solid rgba(57, 255, 20, 0.92);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 4;
+  box-shadow:
+    0 0 8px rgba(57, 255, 20, 0.95),
+    0 0 18px rgba(57, 255, 20, 0.72),
+    0 0 34px rgba(57, 255, 20, 0.46);
+  animation: searchHighlightNeonRingPulse 0.85s ease-in-out infinite;
+}
+
+.iconCard.searchHighlight::after,
+.launcherItem.searchHighlight::after,
+.itemCard.searchHighlight::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(210, 255, 190, 0.9);
+  border-radius: calc(var(--gd-cell-radius, 8px) - 2px);
+  pointer-events: none;
+  z-index: 5;
+  box-shadow:
+    inset 0 0 8px rgba(57, 255, 20, 0.34);
+}
+
+@keyframes searchHighlightNeonPulse {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow:
+      inset 0 0 0 2px rgba(57, 255, 20, 0.78),
+      0 0 0 2px rgba(57, 255, 20, 0.65),
+      0 0 10px rgba(57, 255, 20, 0.72),
+      0 0 22px rgba(57, 255, 20, 0.48),
+      0 0 36px rgba(57, 255, 20, 0.26);
   }
 
-  const withoutHash = raw.startsWith("#") ? raw.slice(1) : raw;
+  50% {
+    filter: brightness(1.18);
+    box-shadow:
+      inset 0 0 0 3px rgba(57, 255, 20, 1),
+      0 0 0 3px rgba(57, 255, 20, 0.95),
+      0 0 16px rgba(57, 255, 20, 1),
+      0 0 34px rgba(57, 255, 20, 0.82),
+      0 0 58px rgba(57, 255, 20, 0.48);
+  }
+}
 
-  if (/^[0-9a-fA-F]{3}$/.test(withoutHash)) {
-    return "#" + withoutHash
-      .split("")
-      .map(ch => ch + ch)
-      .join("")
-      .toUpperCase();
+@keyframes searchHighlightNeonRingPulse {
+  0%, 100% {
+    opacity: 0.76;
+    transform: scale(1);
   }
 
-  if (/^[0-9a-fA-F]{6}$/.test(withoutHash)) {
-    return "#" + withoutHash.toUpperCase();
+  50% {
+    opacity: 1;
+    transform: scale(1.035);
   }
-
-  return null;
 }
+```
 
-反映時の例：
+---
 
-const normalized = normalizeHexColor(lineColorInput.value);
+# 6. 親要素の overflow を確認する
 
-if (normalized === null) {
-  showError("線色HEXは #RGB、RGB、#RRGGBB、RRGGBB の形式で入力してください。");
-  return;
+外側発光が切れている場合があります。
+
+以下の親要素を確認してください。
+
+```text
+gridCell
+cellGrid
+cellGridWrap
+genreCard
+gridScroll
+```
+
+`gridCell` に `overflow: hidden` がある場合、検索ハイライト中だけ見えるようにしてください。
+
+```css
+.gridCell:has(.searchHighlight) {
+  overflow: visible;
 }
+```
 
-if (normalized !== "") {
-  applyLineColor(normalized);
+`:has()` を避けたい場合は、アイコンカードの外側に `searchHighlightCell` クラスを付けても構いません。
+
+JSX例:
+
+```jsx
+<div
+  className={`gridCell ${highlightedItemId === item.id ? "searchHighlightCell" : ""}`}
+>
+```
+
+CSS:
+
+```css
+.gridCell.searchHighlightCell {
+  overflow: visible;
+  z-index: 3;
 }
+```
 
-2. アイコン設定の拡張子表示を8つ程度までにし、それ以降はスクロール表示にする
+推奨は `searchHighlightCell` クラス追加です。
 
-現在、アイコン設定の拡張子一覧が多い場合に画面を圧迫している可能性があります。
+---
 
-以下のように修正してください。
+# 7. JSX側の確認
 
-要件：
-- 拡張子の表示は、見た目上おおよそ8つ分の高さまでにする
-- 9個目以降は同じ枠内で縦スクロールできるようにする
-- 画面全体が拡張子一覧で縦に伸びすぎないようにする
-- 横幅は既存UIに合わせる
-- スクロールバーが必要な場合のみ表示されるようにする
-- 既存の拡張子追加・削除・編集機能がある場合、それらは壊さない
+検索ハイライトクラスが実際に表示対象のアイコンに付いているか確認してください。
 
-CSS例：
+```jsx
+const isSearchHighlighted = highlightedItemId === item.id;
+```
 
-.icon-extension-list,
-.extension-list,
-#iconExtensionList {
-  max-height: 240px;
-  overflow-y: auto;
-  overflow-x: hidden;
+アイコンカード:
+
+```jsx
+className={[
+  "iconCard",
+  isSearchHighlighted ? "searchHighlight" : "",
+  ...
+].filter(Boolean).join(" ")}
+```
+
+セル側にもクラスを付けてください。
+
+```jsx
+className={[
+  "gridCell",
+  isSearchHighlighted ? "searchHighlightCell" : "",
+  ...
+].filter(Boolean).join(" ")}
+```
+
+---
+
+# 8. リンク切れ表示との競合
+
+リンク切れの `brokenPath` と検索ハイライトが同時に付いた場合は、検索ハイライトを優先してください。
+
+```css
+.iconCard.brokenPath.searchHighlight,
+.launcherItem.brokenPath.searchHighlight,
+.itemCard.brokenPath.searchHighlight {
+  border-color: rgba(57, 255, 20, 1) !important;
 }
+```
 
-もし1行あたりの高さが約30pxであれば、8件分として以下でもよいです。
+---
 
-.icon-extension-list,
-.extension-list,
-#iconExtensionList {
-  max-height: calc(30px * 8);
-  overflow-y: auto;
-  overflow-x: hidden;
-}
+# 9. 完了条件
 
-既存のclass名やid名に合わせて適切に適用してください。
+以下を実画面で確認してください。
 
-注意：
-- 単に8件以降を非表示にするのではなく、スクロールで見えるようにしてください
-- 拡張子データ自体は削除しないでください
-- DOM生成処理で slice(0, 8) のように件数を切り詰めないでください
-- 表示領域の高さだけを制限してください
+* 検索結果のアイコン枠がはっきり蛍光グリーンに光る
+* アイコン背景は塗りつぶされない
+* 点滅が明確に見える
+* セルの外側発光が切れていない
+* 検索結果を移動すると、対象アイコンの発光も移動する
+* 検索解除で発光が消える
+* リンク切れ赤枠と重なっても検索ハイライトが分かる
 
-確認項目：
-- 線色HEX欄に外部から `#FF0000` を貼り付けできる
-- 線色HEX欄に `00AAFF` を手入力できる
-- 入力途中の `#F` などで入力が勝手に消えない
-- 正しいHEXを入力して反映すると線色が変わる
-- 不正な値ではエラーメッセージが出る
-- アイコン設定の拡張子が8件程度までは通常表示される
-- 9件以上ある場合、拡張子一覧部分だけがスクロールする
-- 他の設定項目のレイアウトが崩れない
+---
 
-既存コードの構造を確認し、該当するHTML、CSS、JavaScriptを最小限の変更で修正してください。
+# 作業後の報告形式
 
-補足すると、前回共有いただいた Flask アプリ側は画像フォルダやAPI処理が中心で、今回の修正対象は主に `webapp/templates/index.html` と `webapp/static` 配下の JavaScript / CSS 側になるはずです。既存の `app.py` は `webapp/templates` と `webapp/static` を参照する構成になっています。
+```text
+対応結果:
+
+検索ハイライト視認性改善:
+- searchHighlight CSS置換: OK / NG
+- ::before 外側リング追加: OK / NG
+- ::after 内側リング追加: OK / NG
+- gridCell searchHighlightCell追加: OK / NG
+- overflow切れ対策: OK / NG
+- brokenPath競合対策: OK / NG
+- 実画面で蛍光グリーン発光確認: OK / NG
+
+変更ファイル:
+- src/App.jsx:
+- src/styles.css:
+- その他:
+
+確認:
+- npm run build:
+- node --check electron/main.cjs:
+- node --check electron/preload.cjs:
+- npm start:
+
+作業ログ:
+- _md/yyyymmdd-hhmmss.md
+```
+
+ビルド成功だけで完了扱いにしないでください。
+必ず実画面で検索し、対象アイコンの枠が明確に蛍光グリーンで発光することを確認してください。
+
+---
+
+# 作業ログ出力ルール
+
+今回の作業完了後、対応内容をプロジェクトディレクトリ内の `_md/` フォルダへ Markdown ファイルとして必ず書き出してください。
+
+## 出力先
+
+プロジェクトルート直下に `_md/` フォルダを作成してください。
+既に存在する場合はそのまま使用してください。
+
+## ファイル名
+
+ファイル名は、作業完了時点の日時を使って以下の形式にしてください。
+
+```text
+yyyymmdd-hhmmss.md
+```
+
+例:
+
+```text
+20260602-193012.md
+```
+
+## 必須記載内容
+
+作成する Markdown には、以下を必ず記載してください。
+
+```markdown
+# 作業ログ: yyyymmdd-hhmmss
+
+## 1. 指示内容
+
+今回ユーザーから依頼された内容、または読ませた指示文の要点を記載してください。
+
+## 2. 対応内容
+
+実際に対応した内容を箇条書きで記載してください。
+
+## 3. 変更ファイル
+
+変更したファイルをすべて記載してください。
+
+## 4. 実装詳細
+
+主要な実装内容を、機能単位で説明してください。
+
+## 5. 確認結果
+
+実行した確認コマンドと結果を記載してください。
+
+## 6. 未対応・注意点
+
+未対応の項目、制約、注意点、確認できなかったことがあれば記載してください。
+```
+
+この作業ログ作成も完了条件に含めてください。
+ログファイルが作成されていない場合は作業完了扱いにしないでください。
+
+
+
+---
+
+# 作業ログ出力ルール
+
+今回の作業完了後、対応内容をプロジェクトディレクトリ内の `_md/` フォルダへ Markdown ファイルとして必ず書き出してください。
+
+## 出力先
+
+プロジェクトルート直下に `_md/` フォルダを作成してください。
+既に存在する場合はそのまま使用してください。
+
+```text
+<project-root>/
+└─ _md/
+```
+
+## ファイル名
+
+ファイル名は、作業完了時点の日時を使って以下の形式にしてください。
+
+```text
+yyyymmdd-hhmmss.md
+```
+
+例:
+
+```text
+20260529-153012.md
+```
+
+日時はローカル環境の現在時刻で構いません。
+
+## 必須記載内容
+
+作成する Markdown には、以下を必ず記載してください。
+
+```markdown
+# 作業ログ: yyyymmdd-hhmmss
+
+## 1. 指示内容
+
+今回ユーザーから依頼された内容、または読ませた指示文の要点を記載してください。
+
+## 2. 対応内容
+
+実際に対応した内容を箇条書きで記載してください。
+
+## 3. 変更ファイル
+
+変更したファイルをすべて記載してください。
+
+## 4. 実装詳細
+
+主要な実装内容を、機能単位で説明してください。
+
+## 5. 確認結果
+
+実行した確認コマンドと結果を記載してください。
+
+## 6. 未対応・注意点
+
+未対応の項目、制約、注意点、確認できなかったことがあれば記載してください。
 
 ---
 

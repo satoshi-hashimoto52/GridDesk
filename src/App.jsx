@@ -334,6 +334,208 @@ function canPreviewPdf(item) {
   return /\.pdf$/i.test(item.path);
 }
 
+function isMarkdownItem(item) {
+  return /\.md$/i.test(item?.path ?? "");
+}
+
+function createFloatingPreviewId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizePathKey(path) {
+  return String(path ?? "").trim().toLowerCase();
+}
+
+function normalizeRegisteredPath(path) {
+  return String(path ?? "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\/+$/g, "")
+    .toLowerCase();
+}
+
+function getFloatingCategoryId(preview) {
+  const item = preview?.item;
+  return item?.genre_id ?? item?.genreId ?? item?.category_id ?? item?.categoryId;
+}
+
+function renderInlineMarkdown(text, keyPrefix) {
+  const parts = String(text ?? "").split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g);
+  return parts.map((part, index) => {
+    if (!part) return null;
+    if (/^`[^`]+`$/.test(part)) {
+      return <code key={`${keyPrefix}-code-${index}`}>{part.slice(1, -1)}</code>;
+    }
+    if (/^\*\*[^*]+\*\*$/.test(part)) {
+      return <strong key={`${keyPrefix}-strong-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    const linkMatch = part.match(/^\[([^\]]+)\]\([^)]+\)$/);
+    if (linkMatch) {
+      return <span key={`${keyPrefix}-link-${index}`}>{linkMatch[1]}</span>;
+    }
+    return <React.Fragment key={`${keyPrefix}-text-${index}`}>{part}</React.Fragment>;
+  });
+}
+
+function MarkdownCodeBlock({ code }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyCode(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = code;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch (error) {
+      console.error("Failed to copy code block", error);
+      alert("コピーに失敗しました");
+    }
+  }
+
+  return (
+    <div className="mdCodeBlockWrap">
+      <div className="mdCodeBlockHeader">
+        <span>code</span>
+        <button type="button" onClick={copyCode}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="mdCodeBlock">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function MarkdownPreview({ text, onToggleCheckbox }) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const elements = [];
+  let inCodeBlock = false;
+  let codeLines = [];
+
+  function pushCodeBlock(key) {
+    elements.push(
+      <MarkdownCodeBlock key={key} code={codeLines.join("\n")} />
+    );
+    codeLines = [];
+  }
+
+  lines.forEach((line, index) => {
+    if (line.trim().startsWith("```")) {
+      if (inCodeBlock) {
+        pushCodeBlock(`code-${index}`);
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+      }
+      return;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      return;
+    }
+
+    const horizontalRuleMatch = line.trim().match(/^[-*]{3,}$/);
+    if (horizontalRuleMatch) {
+      elements.push(<hr key={index} className="mdHorizontalRule" />);
+      return;
+    }
+
+    const checkboxMatch = line.match(/^(\s*)[-*]\s+\[( |x|X)\]\s+(.*)$/);
+    if (checkboxMatch) {
+      const checked = checkboxMatch[2].toLowerCase() === "x";
+      const indent = checkboxMatch[1].replace(/\t/g, "    ").length;
+      elements.push(
+        <label key={index} className="mdCheckboxLine" style={{ "--md-indent": `${indent * 8}px` }}>
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={() => onToggleCheckbox?.(index)}
+          />
+          <span>{renderInlineMarkdown(checkboxMatch[3], `checkbox-${index}`)}</span>
+        </label>
+      );
+      return;
+    }
+
+    const quoteMatch = line.match(/^\s*>\s?(.*)$/);
+    if (quoteMatch) {
+      elements.push(
+        <blockquote key={index} className="mdQuote">
+          {renderInlineMarkdown(quoteMatch[1], `quote-${index}`)}
+        </blockquote>
+      );
+      return;
+    }
+
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (headingMatch) {
+      const Tag = `h${headingMatch[1].length + 1}`;
+      elements.push(
+        <Tag key={index}>
+          {renderInlineMarkdown(headingMatch[2], `heading-${index}`)}
+        </Tag>
+      );
+      return;
+    }
+
+    const orderedMatch = line.match(/^(\s*)(\d+\.)\s+(.+)$/);
+    if (orderedMatch) {
+      const indent = orderedMatch[1].replace(/\t/g, "    ").length;
+      elements.push(
+        <div key={index} className="mdOrderedItem" style={{ "--md-indent": `${indent * 8}px` }}>
+          <span className="mdListMarker">{orderedMatch[2]}</span>
+          <span>{renderInlineMarkdown(orderedMatch[3], `ordered-${index}`)}</span>
+        </div>
+      );
+      return;
+    }
+
+    const unorderedMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
+    if (unorderedMatch) {
+      const indent = unorderedMatch[1].replace(/\t/g, "    ").length;
+      elements.push(
+        <div key={index} className="mdListItem" style={{ "--md-indent": `${indent * 8}px` }}>
+          <span className="mdListMarker">•</span>
+          <span>{renderInlineMarkdown(unorderedMatch[2], `list-${index}`)}</span>
+        </div>
+      );
+      return;
+    }
+
+    if (!line.trim()) {
+      elements.push(<div key={index} className="mdBlankLine" />);
+      return;
+    }
+
+    elements.push(
+      <p key={index} className="mdParagraph">
+        {renderInlineMarkdown(line, `paragraph-${index}`)}
+      </p>
+    );
+  });
+
+  if (inCodeBlock) {
+    pushCodeBlock("code-open");
+  }
+
+  return <div className="markdownPreview">{elements}</div>;
+}
+
 function getDisplayNameWithoutExtension(item) {
   const name = item?.name || getPathBaseName(item?.path ?? "");
   const type = item?.item_type ?? item?.type ?? "";
@@ -394,7 +596,6 @@ function App() {
   const pinnedPreviewRef = useRef(null);
   const searchInputRef = useRef(null);
   const itemElementRefs = useRef(new Map());
-  const pinnedTextEditorLineNumbersRef = useRef(null);
   const hoverPdfCanvasRef = useRef(null);
   const pinnedPdfCanvasLeftRef = useRef(null);
   const pinnedPdfCanvasRightRef = useRef(null);
@@ -411,6 +612,7 @@ function App() {
   const pinnedPdfResizeRef = useRef(null);
   const hoverPreviewRequestRef = useRef(0);
   const hoverPdfPreviewRequestRef = useRef(0);
+  const floatingZIndexRef = useRef(1000);
   const isHoveringIconRef = useRef(false);
   const isHoveringPreviewRef = useRef(false);
   const isHoveringPdfIconRef = useRef(false);
@@ -424,11 +626,13 @@ function App() {
   const [hoverPreview, setHoverPreview] = useState(null);
   const [hoverPreviewSelection, setHoverPreviewSelection] = useState("");
   const [hoverPreviewCopied, setHoverPreviewCopied] = useState(false);
-  const [pinnedHoverPreview, setPinnedHoverPreview] = useState(null);
+  const [pinnedTextPreviews, setPinnedTextPreviews] = useState([]);
   const [pinnedPreviewSelection, setPinnedPreviewSelection] = useState("");
+  const [pinnedPreviewSelectionId, setPinnedPreviewSelectionId] = useState("");
   const [pinnedPreviewCopied, setPinnedPreviewCopied] = useState(false);
   const [hoverPdfPreview, setHoverPdfPreview] = useState(null);
   const [pinnedPdfPreview, setPinnedPdfPreview] = useState(null);
+  const [, setFloatingZIndexSeed] = useState(1000);
   const [pathCheckResults, setPathCheckResults] = useState({});
   const [pathCheckRunning, setPathCheckRunning] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -509,10 +713,10 @@ function App() {
   }, [hoverPreview]);
 
   useEffect(() => {
-    if (!pinnedHoverPreview) return undefined;
+    if (!pinnedTextPreviews.length) return undefined;
 
     function handleDocumentMouseDown(event) {
-      if (!pinnedPreviewRef.current?.contains(event.target)) {
+      if (!event.target?.closest?.(".pinnedTextPreview")) {
         clearPinnedPreviewSelection();
       }
     }
@@ -529,11 +733,11 @@ function App() {
       document.removeEventListener("mousedown", handleDocumentMouseDown);
       document.removeEventListener("selectionchange", handleSelectionChange);
     };
-  }, [pinnedHoverPreview]);
+  }, [pinnedTextPreviews.length]);
 
   useEffect(() => {
     function handleResize() {
-      setPinnedHoverPreview((prev) => prev ? clampPinnedPreviewBounds(prev) : prev);
+      setPinnedTextPreviews((prev) => prev.map((preview) => clampPinnedPreviewBounds(preview)));
       setPinnedPdfPreview((prev) => prev ? clampPinnedPdfBounds(prev) : prev);
     }
 
@@ -558,7 +762,7 @@ function App() {
   useEffect(() => {
     if (!pinnedPdfPreview) return;
 
-    const headerHeight = 32;
+    const headerHeight = 30;
     const searchHeight = pinnedPdfPreview.searchOpen ? 34 : 0;
     const padding = 20;
     const areaWidth = pinnedPdfPreview.width - padding;
@@ -717,6 +921,46 @@ function App() {
   function getItemCategoryAccentColor(item) {
     const category = getItemCategory(item);
     return category?.accent_color ?? category?.accentColor ?? category?.color ?? "#60a5fa";
+  }
+
+  function findExistingItemByPath(targetPath, excludeItemId = null) {
+    const targetKey = normalizeRegisteredPath(targetPath);
+    if (!targetKey) return null;
+
+    return (workspace?.items || []).find((item) => {
+      if ((item.enabled ?? 1) === 0) return false;
+      if (excludeItemId && String(item.id) === String(excludeItemId)) return false;
+      return normalizeRegisteredPath(item.path) === targetKey;
+    }) || null;
+  }
+
+  function getItemCategoryName(item) {
+    return getItemCategory(item)?.name ?? "不明なカテゴリ";
+  }
+
+  function confirmMoveExistingItem(existingItem) {
+    const categoryName = getItemCategoryName(existingItem);
+    const currentX = existingItem.x ?? existingItem.col ?? existingItem.column ?? "?";
+    const currentY = existingItem.y ?? existingItem.row ?? "?";
+    const displayName =
+      existingItem.name ??
+      existingItem.display_name ??
+      existingItem.displayName ??
+      existingItem.path ??
+      "";
+
+    return window.confirm(
+      [
+        "このファイルは既に登録されています。",
+        "",
+        `カテゴリ: ${categoryName}`,
+        `座標: x=${currentX}, y=${currentY}`,
+        `表示名: ${displayName}`,
+        `パス: ${existingItem.path}`,
+        "",
+        "既存の登録を削除し、現在選択したセルへ移動しますか？"
+      ].join("\n")
+    );
   }
 
   const itemsByGenre = useMemo(() => {
@@ -1110,12 +1354,24 @@ function App() {
     if (!workspace || !pathValue) return;
     const disabled = disabledByGenre.get(String(genreId))?.has(`${x}:${y}`);
     const items = itemsByGenre.get(String(genreId)) || [];
-    if (items.some((item) => item.x === x && item.y === y)) {
+    const existingItem = findExistingItemByPath(pathValue);
+    const occupied = items.find((item) => item.x === x && item.y === y);
+
+    if (occupied && occupied.id !== existingItem?.id) {
       setMessage("移動先セルには既にアイコンがあります。");
       return;
     }
+
+    if (existingItem && !confirmMoveExistingItem(existingItem)) {
+      setMessage("登録をキャンセルしました。");
+      return;
+    }
+
     try {
       const itemType = itemForm.itemType || pickType(pathValue);
+      if (existingItem) {
+        await api.deleteItem(workspace.workspacePath, existingItem.id);
+      }
       if (disabled) {
         await api.restoreCell(workspace.workspacePath, { genreId, x, y });
       }
@@ -1281,6 +1537,7 @@ function App() {
 
   function clearPinnedPreviewSelection() {
     setPinnedPreviewSelection("");
+    setPinnedPreviewSelectionId("");
     setPinnedPreviewCopied(false);
     if (pinnedPreviewCopiedTimerRef.current) {
       clearTimeout(pinnedPreviewCopiedTimerRef.current);
@@ -1293,8 +1550,8 @@ function App() {
     clearHoverPreviewSelection();
   }
 
-  function closePinnedHoverPreview() {
-    setPinnedHoverPreview(null);
+  function closePinnedTextPreview(id) {
+    setPinnedTextPreviews((prev) => prev.filter((preview) => preview.id !== id));
     clearPinnedPreviewSelection();
   }
 
@@ -1314,6 +1571,82 @@ function App() {
     const x = Math.max(padding, Math.min(next.x ?? padding, window.innerWidth - width - padding));
     const y = Math.max(padding, Math.min(next.y ?? padding, window.innerHeight - height - padding));
     return { ...next, x, y, width, height };
+  }
+
+  function takeNextFloatingZIndex() {
+    floatingZIndexRef.current += 1;
+    return floatingZIndexRef.current;
+  }
+
+  function getNextFloatingZIndex() {
+    takeNextFloatingZIndex();
+    setFloatingZIndexSeed(floatingZIndexRef.current);
+    return floatingZIndexRef.current;
+  }
+
+  function updatePinnedTextPreview(id, patchOrUpdater) {
+    setPinnedTextPreviews((prev) =>
+      prev.map((preview) => {
+        if (preview.id !== id) return preview;
+        if (typeof patchOrUpdater === "function") return patchOrUpdater(preview);
+        return { ...preview, ...patchOrUpdater };
+      })
+    );
+  }
+
+  function findPinnedTextPreviewByPath(path) {
+    const key = normalizePathKey(path);
+    if (!key) return null;
+    return pinnedTextPreviews.find((preview) => normalizePathKey(preview.item?.path) === key) || null;
+  }
+
+  function isPinnedPdfPreviewPath(path) {
+    return Boolean(pinnedPdfPreview && normalizePathKey(pinnedPdfPreview.item?.path) === normalizePathKey(path));
+  }
+
+  function bringFloatingToFront(kind, id) {
+    const next = getNextFloatingZIndex();
+    if (kind === "pinnedText") {
+      updatePinnedTextPreview(id, { zIndex: next });
+    } else if (kind === "pinnedPdf") {
+      setPinnedPdfPreview((prev) => prev ? { ...prev, zIndex: next } : prev);
+    } else if (kind === "hoverText") {
+      setHoverPreview((prev) => prev ? { ...prev, zIndex: next } : prev);
+    } else if (kind === "hoverPdf") {
+      setHoverPdfPreview((prev) => prev ? { ...prev, zIndex: next } : prev);
+    }
+  }
+
+  function bringCategoryFloatingPreviewsToFront(categoryId) {
+    const targetCategoryId = String(categoryId);
+
+    setPinnedTextPreviews((prev) =>
+      prev.map((preview) => (
+        String(getFloatingCategoryId(preview)) === targetCategoryId
+          ? { ...preview, zIndex: takeNextFloatingZIndex() }
+          : preview
+      ))
+    );
+
+    setPinnedPdfPreview((prev) => (
+      prev && String(getFloatingCategoryId(prev)) === targetCategoryId
+        ? { ...prev, zIndex: takeNextFloatingZIndex() }
+        : prev
+    ));
+
+    setHoverPreview((prev) => (
+      prev && String(getFloatingCategoryId(prev)) === targetCategoryId
+        ? { ...prev, zIndex: takeNextFloatingZIndex() }
+        : prev
+    ));
+
+    setHoverPdfPreview((prev) => (
+      prev && String(getFloatingCategoryId(prev)) === targetCategoryId
+        ? { ...prev, zIndex: takeNextFloatingZIndex() }
+        : prev
+    ));
+
+    setFloatingZIndexSeed(floatingZIndexRef.current);
   }
 
   function rememberPdfDocument(targetPath, doc) {
@@ -1413,19 +1746,28 @@ function App() {
     event.stopPropagation();
     if (!hoverPreview) return;
 
-    setPinnedHoverPreview(clampPinnedPreviewBounds({
-      id: String(Date.now()),
+    const existing = findPinnedTextPreviewByPath(hoverPreview.item?.path);
+    if (existing) {
+      bringFloatingToFront("pinnedText", existing.id);
+      closeHoverPreview();
+      return;
+    }
+
+    const id = createFloatingPreviewId();
+    setPinnedTextPreviews((prev) => [...prev, clampPinnedPreviewBounds({
+      id,
       x: hoverPreview.x,
       y: hoverPreview.y,
       width: 420,
       height: 360,
+      zIndex: getNextFloatingZIndex(),
       item: hoverPreview.item,
       text: hoverPreview.text,
       truncated: hoverPreview.truncated,
       isEditing: false,
       draftText: hoverPreview.text,
       ext: hoverPreview.ext
-    }));
+    })]);
     clearPinnedPreviewSelection();
     closeHoverPreview();
   }
@@ -1436,12 +1778,19 @@ function App() {
     if (!hoverPdfPreview) return;
     const targetPath = hoverPdfPreview.item?.path || "";
 
+    if (isPinnedPdfPreviewPath(targetPath)) {
+      bringFloatingToFront("pinnedPdf", pinnedPdfPreview.id);
+      setHoverPdfPreview(null);
+      return;
+    }
+
     setPinnedPdfPreview(clampPinnedPdfBounds({
-      id: String(Date.now()),
+      id: createFloatingPreviewId(),
       x: hoverPdfPreview.x,
       y: hoverPdfPreview.y,
       width: 640,
       height: 520,
+      zIndex: getNextFloatingZIndex(),
       item: hoverPdfPreview.item,
       pageNumber: 1,
       pageCount: hoverPdfPreview.pageCount,
@@ -1468,6 +1817,12 @@ function App() {
   }
 
   function handlePdfHoverStart(event, item) {
+    if (isPinnedPdfPreviewPath(item?.path)) {
+      bringFloatingToFront("pinnedPdf", pinnedPdfPreview.id);
+      setHoverPdfPreview(null);
+      return;
+    }
+
     isHoveringPdfIconRef.current = true;
     if (hoverPdfPreviewCloseTimerRef.current) {
       clearTimeout(hoverPdfPreviewCloseTimerRef.current);
@@ -1488,6 +1843,7 @@ function App() {
         setHoverPdfPreview({
           x: Math.max(14, Math.min(anchorRect.right + 10, window.innerWidth - 380)),
           y: Math.max(14, Math.min(anchorRect.top, window.innerHeight - 500)),
+          zIndex: getNextFloatingZIndex(),
           item,
           pageNumber: 1,
           pageCount: doc.numPages,
@@ -1540,6 +1896,13 @@ function App() {
       return;
     }
 
+    const existing = findPinnedTextPreviewByPath(item?.path);
+    if (existing) {
+      bringFloatingToFront("pinnedText", existing.id);
+      closeHoverPreview();
+      return;
+    }
+
     handlePdfHoverEnd();
     isHoveringIconRef.current = true;
     if (hoverPreviewCloseTimerRef.current) {
@@ -1562,7 +1925,7 @@ function App() {
       if (cached) {
         if (cached.ok && hoverPreviewRequestRef.current === requestId && (isHoveringIconRef.current || isHoveringPreviewRef.current)) {
           clearHoverPreviewSelection();
-          setHoverPreview({ ...previewPosition, item, ...cached });
+          setHoverPreview({ ...previewPosition, zIndex: getNextFloatingZIndex(), item, ...cached });
         }
         return;
       }
@@ -1572,7 +1935,7 @@ function App() {
         previewCacheRef.current.set(targetPath, result);
         if (result?.ok && hoverPreviewRequestRef.current === requestId && (isHoveringIconRef.current || isHoveringPreviewRef.current)) {
           clearHoverPreviewSelection();
-          setHoverPreview({ ...previewPosition, item, ...result });
+          setHoverPreview({ ...previewPosition, zIndex: getNextFloatingZIndex(), item, ...result });
         }
       } catch (error) {
         console.debug("Text preview failed", error);
@@ -1663,14 +2026,22 @@ function App() {
 
   function isSelectionInsidePinnedPreview() {
     const selection = window.getSelection?.();
-    const root = pinnedPreviewRef.current;
-    if (!selection || !root || selection.rangeCount === 0) return false;
+    if (!selection || selection.rangeCount === 0) return false;
     const range = selection.getRangeAt(0);
-    return root.contains(range.startContainer) || root.contains(range.endContainer);
+    const startElement = range.startContainer?.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer?.parentElement;
+    const endElement = range.endContainer?.nodeType === Node.ELEMENT_NODE
+      ? range.endContainer
+      : range.endContainer?.parentElement;
+    return Boolean(
+      startElement?.closest?.(".pinnedTextPreview") ||
+      endElement?.closest?.(".pinnedTextPreview")
+    );
   }
 
   function updatePinnedPreviewSelection() {
-    if (pinnedHoverPreview?.isEditing || !isSelectionInsidePinnedPreview()) {
+    if (!isSelectionInsidePinnedPreview()) {
       clearPinnedPreviewSelection();
       return;
     }
@@ -1681,7 +2052,21 @@ function App() {
       return;
     }
 
+    const selection = window.getSelection?.();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const startElement = range?.startContainer?.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range?.startContainer?.parentElement;
+    const root = startElement?.closest?.(".pinnedTextPreview");
+    const previewId = root?.dataset?.previewId || "";
+    const preview = pinnedTextPreviews.find((entry) => entry.id === previewId);
+    if (!preview || preview.isEditing) {
+      clearPinnedPreviewSelection();
+      return;
+    }
+
     setPinnedPreviewSelection(selectedText);
+    setPinnedPreviewSelectionId(previewId);
     setPinnedPreviewCopied(false);
   }
 
@@ -1715,13 +2100,13 @@ function App() {
     }
   }
 
-  function canEditPinnedPreview(preview = pinnedHoverPreview) {
+  function canEditPinnedPreview(preview) {
     const targetPath = preview?.item?.path;
     return Boolean(targetPath && !/^https?:\/\//i.test(targetPath) && preview?.ext);
   }
 
-  function startPinnedPreviewEdit() {
-    setPinnedHoverPreview((prev) => {
+  function startPinnedPreviewEdit(id) {
+    updatePinnedTextPreview(id, (prev) => {
       if (!prev || !canEditPinnedPreview(prev)) return prev;
       return {
         ...prev,
@@ -1732,8 +2117,8 @@ function App() {
     clearPinnedPreviewSelection();
   }
 
-  async function savePinnedPreviewEdit() {
-    const preview = pinnedHoverPreview;
+  async function savePinnedPreviewEdit(id) {
+    const preview = pinnedTextPreviews.find((entry) => entry.id === id);
     if (!preview) return;
 
     const targetPath = preview.item?.path;
@@ -1763,7 +2148,7 @@ function App() {
         ext: preview.ext || ""
       });
 
-      setPinnedHoverPreview((prev) => prev ? {
+      updatePinnedTextPreview(id, (prev) => prev ? {
         ...prev,
         text: prev.draftText ?? "",
         truncated: false,
@@ -1777,31 +2162,57 @@ function App() {
   }
 
   function handlePinnedEditorScroll(event) {
-    if (pinnedTextEditorLineNumbersRef.current) {
-      pinnedTextEditorLineNumbersRef.current.scrollTop = event.currentTarget.scrollTop;
+    const lineNumbers = event.currentTarget.previousElementSibling;
+    if (lineNumbers) {
+      lineNumbers.scrollTop = event.currentTarget.scrollTop;
     }
   }
 
-  function handlePinnedPreviewDragStart(event) {
-    if (!pinnedHoverPreview) return;
+  function togglePinnedMarkdownCheckbox(previewId, lineIndex) {
+    updatePinnedTextPreview(previewId, (preview) => {
+      const source = preview.isEditing
+        ? preview.draftText ?? ""
+        : preview.text ?? "";
+      const lines = source.split(/\r?\n/);
+      const line = lines[lineIndex] ?? "";
+
+      if (/\[ \]/.test(line)) {
+        lines[lineIndex] = line.replace(/\[ \]/, "[x]");
+      } else if (/\[x\]/i.test(line)) {
+        lines[lineIndex] = line.replace(/\[x\]/i, "[ ]");
+      }
+
+      const nextText = lines.join("\n");
+      return {
+        ...preview,
+        text: nextText,
+        draftText: nextText
+      };
+    });
+  }
+
+  function handlePinnedPreviewDragStart(event, preview) {
+    if (!preview) return;
     event.preventDefault();
     event.stopPropagation();
+    bringFloatingToFront("pinnedText", preview.id);
     pinnedDragRef.current = {
+      id: preview.id,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      originX: pinnedHoverPreview.x,
-      originY: pinnedHoverPreview.y
+      originX: preview.x,
+      originY: preview.y
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function handlePinnedPreviewDragMove(event) {
     const drag = pinnedDragRef.current;
-    if (!drag || !pinnedHoverPreview || drag.pointerId !== event.pointerId) return;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     const nextX = drag.originX + event.clientX - drag.startX;
     const nextY = drag.originY + event.clientY - drag.startY;
-    setPinnedHoverPreview((prev) => prev ? clampPinnedPreviewBounds({ ...prev, x: nextX, y: nextY }) : prev);
+    updatePinnedTextPreview(drag.id, (prev) => prev ? clampPinnedPreviewBounds({ ...prev, x: nextX, y: nextY }) : prev);
   }
 
   function handlePinnedPreviewDragEnd(event) {
@@ -1813,26 +2224,28 @@ function App() {
     }
   }
 
-  function handlePinnedPreviewResizeStart(event) {
-    if (!pinnedHoverPreview) return;
+  function handlePinnedPreviewResizeStart(event, preview) {
+    if (!preview) return;
     event.preventDefault();
     event.stopPropagation();
+    bringFloatingToFront("pinnedText", preview.id);
     pinnedResizeRef.current = {
+      id: preview.id,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      originWidth: pinnedHoverPreview.width,
-      originHeight: pinnedHoverPreview.height
+      originWidth: preview.width,
+      originHeight: preview.height
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function handlePinnedPreviewResizeMove(event) {
     const resize = pinnedResizeRef.current;
-    if (!resize || !pinnedHoverPreview || resize.pointerId !== event.pointerId) return;
+    if (!resize || resize.pointerId !== event.pointerId) return;
     const nextWidth = resize.originWidth + event.clientX - resize.startX;
     const nextHeight = resize.originHeight + event.clientY - resize.startY;
-    setPinnedHoverPreview((prev) => prev ? {
+    updatePinnedTextPreview(resize.id, (prev) => prev ? {
       ...clampPinnedPreviewBounds({ ...prev, width: nextWidth, height: nextHeight })
     } : prev);
   }
@@ -1850,6 +2263,7 @@ function App() {
     if (!pinnedPdfPreview) return;
     event.preventDefault();
     event.stopPropagation();
+    bringFloatingToFront("pinnedPdf", pinnedPdfPreview.id);
     pinnedPdfDragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -1881,6 +2295,7 @@ function App() {
     if (!pinnedPdfPreview) return;
     event.preventDefault();
     event.stopPropagation();
+    bringFloatingToFront("pinnedPdf", pinnedPdfPreview.id);
     pinnedPdfResizeRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -2232,6 +2647,7 @@ function App() {
                       setSelectedGenreId(String(genre.id));
                       setItemForm((current) => ({ ...current, genreId: String(genre.id) }));
                     }}
+                    onCategoryHeaderClick={() => bringCategoryFloatingPreviewsToFront(genre.id)}
                     onToggleCollapsed={() => updateGenre({ id: genre.id, collapsed: genre.collapsed ? 0 : 1 })}
                     onCellClick={(x, y, disabled) => {
                       if (deleteCellMode) return toggleCell(genre.id, x, y, disabled);
@@ -2292,8 +2708,10 @@ function App() {
           style={{
             left: hoverPreview.x,
             top: hoverPreview.y,
+            zIndex: hoverPreview.zIndex ?? 1000,
             "--preview-accent-color": getItemCategoryAccentColor(hoverPreview.item)
           }}
+          onPointerDown={() => bringFloatingToFront("hoverText")}
           onMouseEnter={handlePreviewHoverStart}
           onMouseLeave={handlePreviewHoverEnd}
           onMouseUp={updateHoverPreviewSelection}
@@ -2327,7 +2745,13 @@ function App() {
               Pin
             </button>
           </div>
-          <pre>{hoverPreview.text}</pre>
+          {isMarkdownItem(hoverPreview.item) ? (
+            <div className="textHoverPreviewBody markdownBody">
+              <MarkdownPreview text={hoverPreview.text} />
+            </div>
+          ) : (
+            <pre>{hoverPreview.text}</pre>
+          )}
           {hoverPreview.truncated && <div className="textHoverPreviewFooter">先頭のみ表示しています</div>}
         </div>,
         document.body
@@ -2340,8 +2764,10 @@ function App() {
             top: hoverPdfPreview.y,
             width: hoverPdfPreview.width,
             height: hoverPdfPreview.height,
+            zIndex: hoverPdfPreview.zIndex ?? 1000,
             "--preview-accent-color": getItemCategoryAccentColor(hoverPdfPreview.item)
           }}
+          onPointerDown={() => bringFloatingToFront("hoverPdf")}
           onMouseEnter={handlePdfPreviewHoverStart}
           onMouseLeave={handlePdfPreviewHoverEnd}
         >
@@ -2366,31 +2792,35 @@ function App() {
         </div>,
         document.body
       )}
-      {pinnedHoverPreview && createPortal(
+      {pinnedTextPreviews.map((preview) => createPortal(
         <div
+          key={preview.id}
           ref={pinnedPreviewRef}
           className="pinnedTextPreview"
+          data-preview-id={preview.id}
           style={{
-            left: pinnedHoverPreview.x,
-            top: pinnedHoverPreview.y,
-            width: pinnedHoverPreview.width,
-            height: pinnedHoverPreview.height,
-            "--preview-accent-color": getItemCategoryAccentColor(pinnedHoverPreview.item)
+            left: preview.x,
+            top: preview.y,
+            width: preview.width,
+            height: preview.height,
+            zIndex: preview.zIndex ?? 1000,
+            "--preview-accent-color": getItemCategoryAccentColor(preview.item)
           }}
+          onPointerDown={() => bringFloatingToFront("pinnedText", preview.id)}
           onMouseUp={updatePinnedPreviewSelection}
           onKeyUp={updatePinnedPreviewSelection}
           onWheel={(event) => event.stopPropagation()}
         >
           <div
             className="pinnedTextPreviewHeader"
-            onPointerDown={handlePinnedPreviewDragStart}
+            onPointerDown={(event) => handlePinnedPreviewDragStart(event, preview)}
             onPointerMove={handlePinnedPreviewDragMove}
             onPointerUp={handlePinnedPreviewDragEnd}
             onPointerCancel={handlePinnedPreviewDragEnd}
           >
-            <span className="pinnedTextPreviewTitle">{pinnedHoverPreview.item?.name || pinnedHoverPreview.item?.path}</span>
+            <span className="pinnedTextPreviewTitle">{preview.item?.name || preview.item?.path}</span>
             <div className="pinnedTextPreviewActions">
-              {pinnedPreviewSelection && !pinnedHoverPreview.isEditing && (
+              {pinnedPreviewSelection && pinnedPreviewSelectionId === preview.id && !preview.isEditing && (
                 <button
                   type="button"
                   className="pinnedTextPreviewCopyButton"
@@ -2403,63 +2833,71 @@ function App() {
               <button
                 type="button"
                 className="pinnedTextPreviewEditButton"
-                disabled={!pinnedHoverPreview.isEditing && !canEditPinnedPreview(pinnedHoverPreview)}
-                title={pinnedHoverPreview.isEditing ? "保存して閲覧に戻る" : "編集する"}
+                disabled={!preview.isEditing && !canEditPinnedPreview(preview)}
+                title={preview.isEditing ? "保存して閲覧に戻る" : "編集する"}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  if (pinnedHoverPreview.isEditing) {
-                    savePinnedPreviewEdit();
+                  if (preview.isEditing) {
+                    savePinnedPreviewEdit(preview.id);
                   } else {
-                    startPinnedPreviewEdit();
+                    startPinnedPreviewEdit(preview.id);
                   }
                 }}
               >
-                {pinnedHoverPreview.isEditing ? <LineIcon name="note" size={14} /> : <Pencil size={14} />}
+                {preview.isEditing ? <LineIcon name="note" size={14} /> : <Pencil size={14} />}
               </button>
               <button
                 type="button"
                 className="pinnedTextPreviewCloseButton"
                 onPointerDown={(event) => event.stopPropagation()}
-                onClick={closePinnedHoverPreview}
+                onClick={() => closePinnedTextPreview(preview.id)}
               >
                 ×
               </button>
             </div>
           </div>
-          {pinnedHoverPreview.isEditing ? (
+          {preview.isEditing ? (
             <div className="pinnedTextEditor">
-              <div ref={pinnedTextEditorLineNumbersRef} className="pinnedTextEditorLineNumbers">
-                {(pinnedHoverPreview.draftText ?? "").split(/\r?\n/).map((_, index) => (
+              <div className="pinnedTextEditorLineNumbers">
+                {(preview.draftText ?? "").split(/\r?\n/).map((_, index) => (
                   <div key={index}>{index + 1}</div>
                 ))}
               </div>
               <textarea
                 className="pinnedTextEditorTextarea"
-                value={pinnedHoverPreview.draftText ?? ""}
+                value={preview.draftText ?? ""}
                 spellCheck={false}
                 onScroll={handlePinnedEditorScroll}
                 onChange={(event) => {
                   const nextText = event.target.value;
-                  setPinnedHoverPreview((prev) => prev ? { ...prev, draftText: nextText } : prev);
+                  updatePinnedTextPreview(preview.id, { draftText: nextText });
                 }}
               />
             </div>
+          ) : isMarkdownItem(preview.item) ? (
+            <div className="pinnedTextPreviewBody markdownBody">
+              <MarkdownPreview
+                text={preview.text}
+                onToggleCheckbox={(lineIndex) => togglePinnedMarkdownCheckbox(preview.id, lineIndex)}
+              />
+            </div>
           ) : (
-            <pre className="pinnedTextPreviewBody">{pinnedHoverPreview.text}</pre>
+            <pre className="pinnedTextPreviewBody">{preview.text}</pre>
           )}
-          {pinnedHoverPreview.truncated && !pinnedHoverPreview.isEditing && <div className="pinnedTextPreviewFooter">先頭のみ表示しています</div>}
+          {preview.truncated && !preview.isEditing && <div className="pinnedTextPreviewFooter">先頭のみ表示しています</div>}
           <div
             className="pinnedTextPreviewResizeHandle"
-            onPointerDown={handlePinnedPreviewResizeStart}
+            onPointerDown={(event) => handlePinnedPreviewResizeStart(event, preview)}
             onPointerMove={handlePinnedPreviewResizeMove}
             onPointerUp={handlePinnedPreviewResizeEnd}
             onPointerCancel={handlePinnedPreviewResizeEnd}
           />
         </div>,
-        document.body
-      )}
+        document.body,
+        preview.id
+      ))}
       {pinnedPdfPreview && createPortal(
         <div
           className="pinnedPdfPreview"
@@ -2468,8 +2906,10 @@ function App() {
             top: pinnedPdfPreview.y,
             width: pinnedPdfPreview.width,
             height: pinnedPdfPreview.height,
+            zIndex: pinnedPdfPreview.zIndex ?? 1000,
             "--preview-accent-color": getItemCategoryAccentColor(pinnedPdfPreview.item)
           }}
+          onPointerDown={() => bringFloatingToFront("pinnedPdf", pinnedPdfPreview.id)}
         >
           <div
             className="pinnedPdfPreviewHeader"
@@ -2486,14 +2926,16 @@ function App() {
               <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={togglePdfSpreadMode}>
                 {pinnedPdfPreview.spreadMode === "single" ? "1P" : "2P"}
               </button>
-              <button
-                type="button"
-                title={pinnedPdfPreview.bindingDirection === "right" ? "右開き" : "左開き"}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={togglePdfBindingDirection}
-              >
-                {pinnedPdfPreview.bindingDirection === "right" ? "→" : "←"}
-              </button>
+              {pinnedPdfPreview.spreadMode === "double" && (
+                <button
+                  type="button"
+                  title={pinnedPdfPreview.bindingDirection === "right" ? "右開き" : "左開き"}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={togglePdfBindingDirection}
+                >
+                  {pinnedPdfPreview.bindingDirection === "right" ? "→" : "←"}
+                </button>
+              )}
               <button
                 type="button"
                 onPointerDown={(event) => event.stopPropagation()}
@@ -2552,6 +2994,7 @@ function GenreGrid({
   highlightedItemId,
   itemElementRefs,
   onSelectGenre,
+  onCategoryHeaderClick,
   onToggleCollapsed,
   onCellClick,
   onDropPath,
@@ -2582,7 +3025,7 @@ function GenreGrid({
       }}
       onMouseDown={onSelectGenre}
     >
-      <header className="genreCompactHeader">
+      <header className="genreCompactHeader" onClick={onCategoryHeaderClick}>
         <div className="genreAccentBar" />
         <div className="genreCompactInfo">
           <span className="genreCompactTitle">{genre.name}</span>
@@ -2592,7 +3035,10 @@ function GenreGrid({
         <button
           type="button"
           className="genreCollapseButton"
-          onClick={onToggleCollapsed}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleCollapsed?.();
+          }}
           aria-label={genre.collapsed ? "カテゴリを開く" : "カテゴリを閉じる"}
         >
           {genre.collapsed ? "+" : "−"}
