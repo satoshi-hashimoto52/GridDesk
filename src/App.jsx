@@ -1,5 +1,6 @@
 import {
   Archive,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clipboard,
@@ -12,11 +13,16 @@ import {
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
 import LineIcon, { LINE_ICON_OPTIONS } from "./components/LineIcon.jsx";
 import { hexToRgba } from "./utils/color.js";
 import "./styles.css";
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+
 const api = window.gridDesk;
+const SORTED_LINE_ICON_OPTIONS = [...LINE_ICON_OPTIONS].sort((left, right) => left.localeCompare(right));
 const WORK_MODES = {
   NORMAL: "normal",
   REGISTER: "register",
@@ -85,6 +91,7 @@ const defaultSettings = {
   system: {
     openAtLogin: false
   },
+  extensionIconTypes: {},
   iconTypes: defaultIconTypes
 };
 
@@ -187,13 +194,53 @@ function normalizeSettings(rawSettings) {
         ...(merged.ui?.cell || {})
       }
     },
+    extensionIconTypes: normalizeExtensionIconTypes(merged.extensionIconTypes),
     iconTypes
   };
+}
+
+function normalizeExtensionKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/^\.+/, "");
+}
+
+function normalizeExtensionIconTypes(rawExtensionIconTypes) {
+  const extensionIconTypes = {};
+  for (const [extension, setting] of Object.entries(rawExtensionIconTypes || {})) {
+    const key = normalizeExtensionKey(extension);
+    if (!key) continue;
+    const current = setting || {};
+    extensionIconTypes[key] = {
+      label: key,
+      icon: current.icon || defaultIconTypes.default.icon,
+      strokeColor: current.strokeColor || current.color || "#000000",
+      backgroundColor: current.backgroundColor || current.iconBackgroundColor || "#000000",
+      backgroundOpacity: current.backgroundOpacity ?? current.iconBackgroundOpacity ?? 0
+    };
+  }
+  return extensionIconTypes;
 }
 
 function getIconTypeSetting(type, settings) {
   const iconTypes = settings?.iconTypes || {};
   return iconTypes[type] || iconTypes.default || defaultIconTypes.default;
+}
+
+function getExtensionKeyFromPath(targetPath = "") {
+  if (/^https?:\/\//i.test(targetPath)) return "";
+  const match = getPathBaseName(targetPath).match(/\.([^.]+)$/);
+  return match ? normalizeExtensionKey(match[1]) : "";
+}
+
+function getExtensionIconSetting(targetPath, settings) {
+  const extension = getExtensionKeyFromPath(targetPath);
+  if (!extension) return null;
+  return settings?.extensionIconTypes?.[extension] || null;
+}
+
+function getItemIconSetting(item, settings) {
+  const itemType = item?.item_type ?? item?.type;
+  if (itemType === "folder" || item?.isDirectory) return getIconTypeSetting("folder", settings);
+  return getExtensionIconSetting(item?.path ?? "", settings) || getIconTypeSetting(itemType, settings);
 }
 
 function getLabelFontFamilyValue(fontFamily) {
@@ -266,6 +313,12 @@ function getExtensionLabel(item) {
   return match ? match[1] : "";
 }
 
+function canPreviewPdf(item) {
+  if (!item?.path) return false;
+  if (/^https?:\/\//i.test(item.path)) return false;
+  return /\.pdf$/i.test(item.path);
+}
+
 function getDisplayNameWithoutExtension(item) {
   const name = item?.name || getPathBaseName(item?.path ?? "");
   const type = item?.item_type ?? item?.type ?? "";
@@ -286,8 +339,8 @@ function pickType(targetPath) {
   return ext ? "default" : "folder";
 }
 
-function iconNameForType(type, settings) {
-  return getIconTypeSetting(type, settings)?.icon || defaultIconTypes.default.icon;
+function iconNameForTarget(targetPath, type, settings) {
+  return (getExtensionIconSetting(targetPath, settings) || getIconTypeSetting(type, settings))?.icon || defaultIconTypes.default.icon;
 }
 
 function getWorkModeButtonLabel(workMode) {
@@ -300,6 +353,14 @@ function getCurrentWorkModeLabel(workMode) {
   if (workMode === WORK_MODES.NORMAL) return "操作モード";
   if (workMode === WORK_MODES.REGISTER) return "登録モード";
   return "削除モード";
+}
+
+function SidebarChevron({ open }) {
+  return (
+    <span className="sidebarSectionChevron" aria-hidden="true">
+      {open ? <ChevronDown size={13} strokeWidth={2.4} /> : <ChevronLeft size={13} strokeWidth={2.4} />}
+    </span>
+  );
 }
 
 function App() {
@@ -317,16 +378,29 @@ function App() {
   const hoverPreviewRef = useRef(null);
   const pinnedPreviewRef = useRef(null);
   const pinnedTextEditorLineNumbersRef = useRef(null);
+  const hoverPdfCanvasRef = useRef(null);
+  const pinnedPdfCanvasLeftRef = useRef(null);
+  const pinnedPdfCanvasRightRef = useRef(null);
   const hoverPreviewTimerRef = useRef(null);
   const hoverPreviewCloseTimerRef = useRef(null);
   const hoverPreviewCopiedTimerRef = useRef(null);
+  const hoverPdfPreviewTimerRef = useRef(null);
+  const hoverPdfPreviewCloseTimerRef = useRef(null);
+  const pdfSearchTimerRef = useRef(null);
   const pinnedPreviewCopiedTimerRef = useRef(null);
   const pinnedDragRef = useRef(null);
   const pinnedResizeRef = useRef(null);
+  const pinnedPdfDragRef = useRef(null);
+  const pinnedPdfResizeRef = useRef(null);
   const hoverPreviewRequestRef = useRef(0);
+  const hoverPdfPreviewRequestRef = useRef(0);
   const isHoveringIconRef = useRef(false);
   const isHoveringPreviewRef = useRef(false);
+  const isHoveringPdfIconRef = useRef(false);
+  const isHoveringPdfPreviewRef = useRef(false);
   const previewCacheRef = useRef(new Map());
+  const pdfDocumentCacheRef = useRef(new Map());
+  const pdfBindingDirectionRef = useRef(new Map());
   const [workMode, setWorkMode] = useState(WORK_MODES.REGISTER);
   const [dragTargetCell, setDragTargetCell] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
@@ -336,6 +410,8 @@ function App() {
   const [pinnedHoverPreview, setPinnedHoverPreview] = useState(null);
   const [pinnedPreviewSelection, setPinnedPreviewSelection] = useState("");
   const [pinnedPreviewCopied, setPinnedPreviewCopied] = useState(false);
+  const [hoverPdfPreview, setHoverPdfPreview] = useState(null);
+  const [pinnedPdfPreview, setPinnedPdfPreview] = useState(null);
   const [genreDraft, setGenreDraft] = useState({ name: "", cols: 6, rows: 3, accentColor: "#2f7d68", memo: "" });
   const [editGenreId, setEditGenreId] = useState("");
   const [itemForm, setItemForm] = useState(emptyForm());
@@ -352,7 +428,16 @@ function App() {
       if (hoverPreviewTimerRef.current) clearTimeout(hoverPreviewTimerRef.current);
       if (hoverPreviewCloseTimerRef.current) clearTimeout(hoverPreviewCloseTimerRef.current);
       if (hoverPreviewCopiedTimerRef.current) clearTimeout(hoverPreviewCopiedTimerRef.current);
+      if (hoverPdfPreviewTimerRef.current) clearTimeout(hoverPdfPreviewTimerRef.current);
+      if (hoverPdfPreviewCloseTimerRef.current) clearTimeout(hoverPdfPreviewCloseTimerRef.current);
+      if (pdfSearchTimerRef.current) clearTimeout(pdfSearchTimerRef.current);
       if (pinnedPreviewCopiedTimerRef.current) clearTimeout(pinnedPreviewCopiedTimerRef.current);
+      for (const doc of pdfDocumentCacheRef.current.values()) {
+        try {
+          doc?.destroy?.();
+        } catch {}
+      }
+      pdfDocumentCacheRef.current.clear();
     };
   }, []);
 
@@ -427,6 +512,7 @@ function App() {
   useEffect(() => {
     function handleResize() {
       setPinnedHoverPreview((prev) => prev ? clampPinnedPreviewBounds(prev) : prev);
+      setPinnedPdfPreview((prev) => prev ? clampPinnedPdfBounds(prev) : prev);
     }
 
     window.addEventListener("resize", handleResize);
@@ -434,6 +520,100 @@ function App() {
       window.removeEventListener("resize", handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hoverPdfPreview || !hoverPdfCanvasRef.current) return;
+
+    renderPdfPageToCanvas({
+      item: hoverPdfPreview.item,
+      pageNumber: 1,
+      canvas: hoverPdfCanvasRef.current,
+      containerWidth: hoverPdfPreview.width - 20,
+      containerHeight: hoverPdfPreview.height - 72
+    });
+  }, [hoverPdfPreview]);
+
+  useEffect(() => {
+    if (!pinnedPdfPreview) return;
+
+    const headerHeight = 32;
+    const searchHeight = pinnedPdfPreview.searchOpen ? 34 : 0;
+    const padding = 20;
+    const areaWidth = pinnedPdfPreview.width - padding;
+    const areaHeight = pinnedPdfPreview.height - headerHeight - searchHeight - padding;
+
+    if (pinnedPdfPreview.spreadMode === "single") {
+      clearPdfCanvas(pinnedPdfCanvasRightRef.current);
+      if (pinnedPdfCanvasLeftRef.current) {
+        renderPdfPageToCanvas({
+          item: pinnedPdfPreview.item,
+          pageNumber: pinnedPdfPreview.pageNumber,
+          canvas: pinnedPdfCanvasLeftRef.current,
+          containerWidth: areaWidth,
+          containerHeight: areaHeight
+        });
+      }
+      return;
+    }
+
+    const pageWidth = (areaWidth - 10) / 2;
+    const leftPageNumber = pinnedPdfPreview.bindingDirection === "right"
+      ? pinnedPdfPreview.pageNumber + 1
+      : pinnedPdfPreview.pageNumber;
+    const rightPageNumber = pinnedPdfPreview.bindingDirection === "right"
+      ? pinnedPdfPreview.pageNumber
+      : pinnedPdfPreview.pageNumber + 1;
+    if (pinnedPdfCanvasLeftRef.current) {
+      if (leftPageNumber <= pinnedPdfPreview.pageCount) {
+        renderPdfPageToCanvas({
+          item: pinnedPdfPreview.item,
+          pageNumber: leftPageNumber,
+          canvas: pinnedPdfCanvasLeftRef.current,
+          containerWidth: pageWidth,
+          containerHeight: areaHeight
+        });
+      } else {
+        clearPdfCanvas(pinnedPdfCanvasLeftRef.current);
+      }
+    }
+
+    if (pinnedPdfCanvasRightRef.current && rightPageNumber <= pinnedPdfPreview.pageCount) {
+      renderPdfPageToCanvas({
+        item: pinnedPdfPreview.item,
+        pageNumber: rightPageNumber,
+        canvas: pinnedPdfCanvasRightRef.current,
+        containerWidth: pageWidth,
+        containerHeight: areaHeight
+      });
+    } else {
+      clearPdfCanvas(pinnedPdfCanvasRightRef.current);
+    }
+  }, [
+    pinnedPdfPreview?.item?.path,
+    pinnedPdfPreview?.pageNumber,
+    pinnedPdfPreview?.spreadMode,
+    pinnedPdfPreview?.bindingDirection,
+    pinnedPdfPreview?.width,
+    pinnedPdfPreview?.height,
+    pinnedPdfPreview?.searchOpen
+  ]);
+
+  useEffect(() => {
+    function handlePdfSearchShortcut(event) {
+      if (!pinnedPdfPreview) return;
+      const isSearchShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f";
+      if (!isSearchShortcut) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setPinnedPdfPreview((prev) => prev ? { ...prev, searchOpen: true } : prev);
+    }
+
+    window.addEventListener("keydown", handlePdfSearchShortcut, true);
+    return () => {
+      window.removeEventListener("keydown", handlePdfSearchShortcut, true);
+    };
+  }, [pinnedPdfPreview]);
 
   useEffect(() => {
     const firstGenre = workspace?.genres?.[0]?.id;
@@ -488,6 +668,21 @@ function App() {
     return map;
   }, [workspace]);
 
+  function getItemCategoryId(item) {
+    return item?.genre_id ?? item?.genreId ?? item?.category_id ?? item?.categoryId;
+  }
+
+  function getItemCategory(item) {
+    const categoryId = getItemCategoryId(item);
+    if (categoryId === undefined || categoryId === null) return null;
+    return genresById.get(String(categoryId)) || null;
+  }
+
+  function getItemCategoryAccentColor(item) {
+    const category = getItemCategory(item);
+    return category?.accent_color ?? category?.accentColor ?? category?.color ?? "#60a5fa";
+  }
+
   const itemsByGenre = useMemo(() => {
     const map = new Map();
     for (const item of workspace?.items || []) {
@@ -515,32 +710,51 @@ function App() {
     setMessage(error?.message || String(error));
   }
 
-  function requestFitWindowWidth() {
+  function requestFitWindowSize() {
     if (settings?.ui?.autoFitWindowWidth === false || !workspace) return;
     const sidebarWidth = sidebarRef.current?.getBoundingClientRect().width ?? 0;
+    const sidebarHeight = settings?.ui?.sidebarCollapsed === true ? 0 : (sidebarRef.current?.scrollHeight ?? 0);
     const genreListEl = genreListRef.current;
     if (!genreListEl) return;
     const rectWidth = genreListEl.getBoundingClientRect().width;
+    const rectHeight = genreListEl.getBoundingClientRect().height;
     const scrollWidth = genreListEl.scrollWidth;
+    const scrollHeight = genreListEl.scrollHeight;
     const genreWidth = Math.max(rectWidth, scrollWidth);
+    const genreHeight = Math.max(rectHeight, scrollHeight);
     if (!genreWidth) return;
-    const outerPadding = 36;
-    const collapsedMinWidth = 360;
-    const expandedMinWidth = 520;
+    const outerPaddingX = 24;
+    const outerPaddingY = 30;
+    const collapsedMinWidth = 260;
+    const expandedMinWidth = 360;
+    const minHeight = 260;
     const sidebarCollapsed = settings?.ui?.sidebarCollapsed === true;
     const minWidth = sidebarCollapsed ? collapsedMinWidth : expandedMinWidth;
     const maxWidth = Math.min(window.screen?.availWidth || 1800, 1800);
-    const nextWidth = Math.round(Math.max(minWidth, Math.min(maxWidth, sidebarWidth + genreWidth + outerPadding)));
-    console.debug("GridDesk fit window width", {
+    const maxHeight = Math.min(window.screen?.availHeight || 1200, 1200);
+    const nextWidth = Math.round(Math.max(minWidth, Math.min(maxWidth, sidebarWidth + genreWidth + outerPaddingX)));
+    const nextHeight = Math.round(Math.max(minHeight, Math.min(maxHeight, Math.max(genreHeight, sidebarHeight) + outerPaddingY)));
+    console.debug("GridDesk fit window size", {
       sidebarCollapsed,
       sidebarWidth,
+      sidebarHeight,
       rectWidth,
+      rectHeight,
       scrollWidth,
+      scrollHeight,
       genreWidth,
-      outerPadding,
+      genreHeight,
+      outerPaddingX,
+      outerPaddingY,
       minWidth,
-      nextWidth
+      minHeight,
+      nextWidth,
+      nextHeight
     });
+    if (api.setWindowBounds) {
+      api.setWindowBounds({ width: nextWidth, height: nextHeight })?.catch?.(() => {});
+      return;
+    }
     api.setWindowWidth?.(nextWidth)?.catch?.(() => {});
   }
 
@@ -555,7 +769,7 @@ function App() {
     if (fitWindowTimer.current) clearTimeout(fitWindowTimer.current);
     fitWindowTimer.current = window.setTimeout(() => {
       window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(requestFitWindowWidth);
+        window.requestAnimationFrame(requestFitWindowSize);
       });
     }, 80);
   }
@@ -581,7 +795,11 @@ function App() {
 
   function updateSettings(partialSettings) {
     setSettings((prev) => {
-      const next = normalizeSettings(mergeDeep(prev, partialSettings));
+      const merged = mergeDeep(prev, partialSettings);
+      if (Object.prototype.hasOwnProperty.call(partialSettings || {}, "extensionIconTypes")) {
+        merged.extensionIconTypes = partialSettings.extensionIconTypes || {};
+      }
+      const next = normalizeSettings(merged);
       setWorkspace((current) => current ? { ...current, settings: next } : current);
       scheduleSaveSettings(next);
       return next;
@@ -599,8 +817,64 @@ function App() {
     });
   }
 
+  function updateExtensionIconType(extension, patch) {
+    const key = normalizeExtensionKey(extension);
+    if (!key) return;
+    const current = settings.extensionIconTypes?.[key] || {
+      label: key,
+      icon: defaultIconTypes.default.icon,
+      strokeColor: "#000000",
+      backgroundColor: "#000000",
+      backgroundOpacity: 0
+    };
+    updateSettings({
+      extensionIconTypes: {
+        ...(settings.extensionIconTypes || {}),
+        [key]: {
+          ...current,
+          label: key,
+          ...patch
+        }
+      }
+    });
+  }
+
+  function addExtensionIconTypes(rawExtensions) {
+    const keys = Array.from(new Set(
+      String(rawExtensions || "")
+        .split(",")
+        .map(normalizeExtensionKey)
+        .filter(Boolean)
+    ));
+    if (keys.length === 0) return false;
+
+    const next = { ...(settings.extensionIconTypes || {}) };
+    let changed = false;
+    for (const key of keys) {
+      if (next[key]) continue;
+      next[key] = {
+        label: key,
+        icon: defaultIconTypes.default.icon,
+        strokeColor: "#000000",
+        backgroundColor: "#000000",
+        backgroundOpacity: 0
+      };
+      changed = true;
+    }
+    if (changed) updateSettings({ extensionIconTypes: next });
+    return true;
+  }
+
+  function deleteExtensionIconType(extension) {
+    const key = normalizeExtensionKey(extension);
+    if (!key) return;
+    const next = { ...(settings.extensionIconTypes || {}) };
+    delete next[key];
+    updateSettings({ extensionIconTypes: next });
+  }
+
   function resetIconTypes() {
-    updateSettings({ iconTypes: defaultIconTypes });
+    updateSettings({ extensionIconTypes: {} });
   }
 
   async function openWorkspace(action, workspacePath) {
@@ -668,7 +942,7 @@ function App() {
       path: targetPath,
       name: current.name || basename(targetPath),
       itemType,
-      iconName: current.iconName || iconNameForType(itemType, settings)
+      iconName: iconNameForTarget(targetPath, itemType, settings)
     }));
   }
 
@@ -700,6 +974,7 @@ function App() {
       return;
     }
     try {
+      const itemType = itemForm.itemType || pickType(pathValue);
       if (disabled) {
         await api.restoreCell(workspace.workspacePath, { genreId, x, y });
       }
@@ -707,8 +982,8 @@ function App() {
         genreId,
         name: itemForm.name || basename(pathValue),
         path: pathValue,
-        itemType: itemForm.itemType || pickType(pathValue),
-        iconName: itemForm.iconName,
+        itemType,
+        iconName: overridePath ? iconNameForTarget(pathValue, itemType, settings) : (itemForm.iconName || iconNameForTarget(pathValue, itemType, settings)),
         x,
         y
       });
@@ -891,6 +1166,107 @@ function App() {
     return { ...next, x, y, width, height };
   }
 
+  function clampPinnedPdfBounds(next) {
+    const padding = 8;
+    const width = Math.max(360, Math.min(next.width ?? 640, window.innerWidth - padding * 2));
+    const height = Math.max(260, Math.min(next.height ?? 520, window.innerHeight - padding * 2));
+    const x = Math.max(padding, Math.min(next.x ?? padding, window.innerWidth - width - padding));
+    const y = Math.max(padding, Math.min(next.y ?? padding, window.innerHeight - height - padding));
+    return { ...next, x, y, width, height };
+  }
+
+  function rememberPdfDocument(targetPath, doc) {
+    const cache = pdfDocumentCacheRef.current;
+    if (cache.has(targetPath)) cache.delete(targetPath);
+    cache.set(targetPath, doc);
+
+    while (cache.size > 3) {
+      const firstKey = cache.keys().next().value;
+      const firstDoc = cache.get(firstKey);
+      try {
+        firstDoc?.destroy?.();
+      } catch {}
+      cache.delete(firstKey);
+    }
+  }
+
+  async function loadPdfDocument(item) {
+    const targetPath = item?.path;
+    if (!targetPath) return null;
+
+    const cache = pdfDocumentCacheRef.current;
+    if (cache.has(targetPath)) return cache.get(targetPath);
+
+    const result = await api.readPdfPreview?.(targetPath);
+    if (!result?.ok) {
+      console.debug("PDF preview skipped/failed", result);
+      return null;
+    }
+
+    let data = result.data;
+    if (Array.isArray(data)) {
+      data = new Uint8Array(data);
+    } else if (data instanceof ArrayBuffer) {
+      data = new Uint8Array(data);
+    } else if (data?.buffer) {
+      data = new Uint8Array(data.buffer);
+    }
+
+    const loadingTask = pdfjsLib.getDocument({ data });
+    const doc = await loadingTask.promise;
+    rememberPdfDocument(targetPath, doc);
+    return doc;
+  }
+
+  function clearPdfCanvas(canvas) {
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    context?.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.width = 0;
+    canvas.height = 0;
+    canvas.style.width = "0px";
+    canvas.style.height = "0px";
+  }
+
+  async function renderPdfPageToCanvas({ item, pageNumber, canvas, containerWidth, containerHeight }) {
+    const doc = await loadPdfDocument(item);
+    if (!doc || !canvas || pageNumber < 1 || pageNumber > doc.numPages) return;
+
+    const page = await doc.getPage(pageNumber);
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = Math.min(containerWidth / baseViewport.width, containerHeight / baseViewport.height);
+    const viewport = page.getViewport({ scale: Math.max(0.1, scale) });
+    const outputScale = window.devicePixelRatio || 1;
+
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    await page.render({ canvasContext: context, viewport }).promise;
+  }
+
+  async function searchPdfText(item, query) {
+    const doc = await loadPdfDocument(item);
+    if (!doc || !query.trim()) return [];
+    if (doc.numPages >= 50) console.debug("PDF search may take some time", { pages: doc.numPages });
+
+    const normalizedQuery = query.trim().toLowerCase();
+    const results = [];
+    for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+      const page = await doc.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      const text = textContent.items.map((entry) => entry.str ?? "").join(" ").toLowerCase();
+      if (text.includes(normalizedQuery)) results.push({ pageNumber });
+    }
+    return results;
+  }
+
   function pinHoverPreview(event) {
     event.preventDefault();
     event.stopPropagation();
@@ -913,6 +1289,98 @@ function App() {
     closeHoverPreview();
   }
 
+  function pinHoverPdfPreview(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!hoverPdfPreview) return;
+    const targetPath = hoverPdfPreview.item?.path || "";
+
+    setPinnedPdfPreview(clampPinnedPdfBounds({
+      id: String(Date.now()),
+      x: hoverPdfPreview.x,
+      y: hoverPdfPreview.y,
+      width: 640,
+      height: 520,
+      item: hoverPdfPreview.item,
+      pageNumber: 1,
+      pageCount: hoverPdfPreview.pageCount,
+      spreadMode: "single",
+      bindingDirection: pdfBindingDirectionRef.current.get(targetPath) || "left",
+      searchOpen: false,
+      searchQuery: "",
+      searchResults: [],
+      searchIndex: 0
+    }));
+    setHoverPdfPreview(null);
+  }
+
+  function scheduleCloseHoverPdfPreview() {
+    if (hoverPdfPreviewCloseTimerRef.current) {
+      clearTimeout(hoverPdfPreviewCloseTimerRef.current);
+    }
+
+    hoverPdfPreviewCloseTimerRef.current = window.setTimeout(() => {
+      if (!isHoveringPdfIconRef.current && !isHoveringPdfPreviewRef.current) {
+        setHoverPdfPreview(null);
+      }
+    }, 180);
+  }
+
+  function handlePdfHoverStart(event, item) {
+    isHoveringPdfIconRef.current = true;
+    if (hoverPdfPreviewCloseTimerRef.current) {
+      clearTimeout(hoverPdfPreviewCloseTimerRef.current);
+      hoverPdfPreviewCloseTimerRef.current = null;
+    }
+    closeHoverPreview();
+    setHoverPdfPreview(null);
+
+    const anchorRect = event.currentTarget.getBoundingClientRect();
+    const requestId = hoverPdfPreviewRequestRef.current + 1;
+    hoverPdfPreviewRequestRef.current = requestId;
+    if (hoverPdfPreviewTimerRef.current) clearTimeout(hoverPdfPreviewTimerRef.current);
+    hoverPdfPreviewTimerRef.current = window.setTimeout(async () => {
+      try {
+        const doc = await loadPdfDocument(item);
+        if (!doc || hoverPdfPreviewRequestRef.current !== requestId || !isHoveringPdfIconRef.current) return;
+
+        setHoverPdfPreview({
+          x: Math.max(14, Math.min(anchorRect.right + 10, window.innerWidth - 380)),
+          y: Math.max(14, Math.min(anchorRect.top, window.innerHeight - 500)),
+          item,
+          pageNumber: 1,
+          pageCount: doc.numPages,
+          width: 360,
+          height: 480
+        });
+      } catch (error) {
+        console.debug("PDF hover preview failed", error);
+      }
+    }, 400);
+  }
+
+  function handlePdfHoverEnd() {
+    isHoveringPdfIconRef.current = false;
+    if (hoverPdfPreviewTimerRef.current) {
+      clearTimeout(hoverPdfPreviewTimerRef.current);
+      hoverPdfPreviewTimerRef.current = null;
+    }
+    scheduleCloseHoverPdfPreview();
+  }
+
+  function handlePdfPreviewHoverStart() {
+    isHoveringPdfPreviewRef.current = true;
+    if (hoverPdfPreviewCloseTimerRef.current) {
+      clearTimeout(hoverPdfPreviewCloseTimerRef.current);
+      hoverPdfPreviewCloseTimerRef.current = null;
+    }
+  }
+
+  function handlePdfPreviewHoverEnd() {
+    isHoveringPdfPreviewRef.current = false;
+    scheduleCloseHoverPdfPreview();
+  }
+
   function scheduleCloseHoverPreview() {
     if (hoverPreviewCloseTimerRef.current) {
       clearTimeout(hoverPreviewCloseTimerRef.current);
@@ -926,6 +1394,12 @@ function App() {
   }
 
   function handleIconHoverStart(event, item) {
+    if (canPreviewPdf(item)) {
+      handlePdfHoverStart(event, item);
+      return;
+    }
+
+    handlePdfHoverEnd();
     isHoveringIconRef.current = true;
     if (hoverPreviewCloseTimerRef.current) {
       clearTimeout(hoverPreviewCloseTimerRef.current);
@@ -966,6 +1440,11 @@ function App() {
   }
 
   function handleIconHoverEnd() {
+    if (hoverPdfPreview || hoverPdfPreviewTimerRef.current) {
+      handlePdfHoverEnd();
+      return;
+    }
+
     isHoveringIconRef.current = false;
     if (hoverPreviewTimerRef.current) {
       clearTimeout(hoverPreviewTimerRef.current);
@@ -1226,6 +1705,133 @@ function App() {
     }
   }
 
+  function handlePinnedPdfDragStart(event) {
+    if (!pinnedPdfPreview) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pinnedPdfDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: pinnedPdfPreview.x,
+      originY: pinnedPdfPreview.y
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePinnedPdfDragMove(event) {
+    const drag = pinnedPdfDragRef.current;
+    if (!drag || !pinnedPdfPreview || drag.pointerId !== event.pointerId) return;
+    const nextX = drag.originX + event.clientX - drag.startX;
+    const nextY = drag.originY + event.clientY - drag.startY;
+    setPinnedPdfPreview((prev) => prev ? clampPinnedPdfBounds({ ...prev, x: nextX, y: nextY }) : prev);
+  }
+
+  function handlePinnedPdfDragEnd(event) {
+    if (pinnedPdfDragRef.current?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      pinnedPdfDragRef.current = null;
+    }
+  }
+
+  function handlePinnedPdfResizeStart(event) {
+    if (!pinnedPdfPreview) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pinnedPdfResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originWidth: pinnedPdfPreview.width,
+      originHeight: pinnedPdfPreview.height
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePinnedPdfResizeMove(event) {
+    const resize = pinnedPdfResizeRef.current;
+    if (!resize || !pinnedPdfPreview || resize.pointerId !== event.pointerId) return;
+    const nextWidth = resize.originWidth + event.clientX - resize.startX;
+    const nextHeight = resize.originHeight + event.clientY - resize.startY;
+    setPinnedPdfPreview((prev) => prev ? clampPinnedPdfBounds({ ...prev, width: nextWidth, height: nextHeight }) : prev);
+  }
+
+  function handlePinnedPdfResizeEnd(event) {
+    if (pinnedPdfResizeRef.current?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      pinnedPdfResizeRef.current = null;
+    }
+  }
+
+  function togglePdfSpreadMode() {
+    setPinnedPdfPreview((prev) => prev ? {
+      ...prev,
+      spreadMode: prev.spreadMode === "single" ? "double" : "single"
+    } : prev);
+  }
+
+  function togglePdfBindingDirection() {
+    setPinnedPdfPreview((prev) => {
+      if (!prev) return prev;
+      const nextDirection = prev.bindingDirection === "right" ? "left" : "right";
+      const targetPath = prev.item?.path;
+      if (targetPath) pdfBindingDirectionRef.current.set(targetPath, nextDirection);
+      return { ...prev, bindingDirection: nextDirection };
+    });
+  }
+
+  function goPrevPdfPage() {
+    setPinnedPdfPreview((prev) => {
+      if (!prev) return prev;
+      const step = prev.spreadMode === "double" ? 2 : 1;
+      return { ...prev, pageNumber: Math.max(1, prev.pageNumber - step) };
+    });
+  }
+
+  function goNextPdfPage() {
+    setPinnedPdfPreview((prev) => {
+      if (!prev) return prev;
+      const step = prev.spreadMode === "double" ? 2 : 1;
+      return { ...prev, pageNumber: Math.min(prev.pageCount, prev.pageNumber + step) };
+    });
+  }
+
+  function updatePdfSearchQuery(query) {
+    setPinnedPdfPreview((prev) => prev ? { ...prev, searchQuery: query } : prev);
+    if (pdfSearchTimerRef.current) clearTimeout(pdfSearchTimerRef.current);
+
+    const item = pinnedPdfPreview?.item;
+    pdfSearchTimerRef.current = window.setTimeout(async () => {
+      const results = await searchPdfText(item, query);
+      setPinnedPdfPreview((prev) => prev ? {
+        ...prev,
+        searchResults: results,
+        searchIndex: 0,
+        pageNumber: results[0]?.pageNumber ?? prev.pageNumber
+      } : prev);
+    }, 300);
+  }
+
+  function goNextPdfSearchResult() {
+    setPinnedPdfPreview((prev) => {
+      if (!prev || !prev.searchResults.length) return prev;
+      const nextIndex = (prev.searchIndex + 1) % prev.searchResults.length;
+      return { ...prev, searchIndex: nextIndex, pageNumber: prev.searchResults[nextIndex].pageNumber };
+    });
+  }
+
+  function goPrevPdfSearchResult() {
+    setPinnedPdfPreview((prev) => {
+      if (!prev || !prev.searchResults.length) return prev;
+      const nextIndex = (prev.searchIndex - 1 + prev.searchResults.length) % prev.searchResults.length;
+      return { ...prev, searchIndex: nextIndex, pageNumber: prev.searchResults[nextIndex].pageNumber };
+    });
+  }
+
   const selectedEditGenre = genresById.get(String(editGenreId));
 
   return (
@@ -1291,7 +1897,7 @@ function App() {
                       <LineIcon name="folderOpen" size={16} />
                       <span>カテゴリ管理</span>
                     </div>
-                    <span className="sidebarSectionChevron">&lt;</span>
+                    <SidebarChevron open={sidebarSectionOpen("genreManager")} />
                   </summary>
                   <div className="sidebarSectionBody">
                     <div className="categoryManageSubsections">
@@ -1302,7 +1908,7 @@ function App() {
                       >
                         <summary className="sidebarSubsectionHeader">
                           <span>カテゴリ追加</span>
-                          <span className="sidebarSectionChevron">&lt;</span>
+                          <SidebarChevron open={categoryManageSectionOpen("add")} />
                         </summary>
                         <div className="sidebarSubsectionBody">
                           <label>
@@ -1320,7 +1926,7 @@ function App() {
                       >
                         <summary className="sidebarSubsectionHeader">
                           <span>カテゴリ変更</span>
-                          <span className="sidebarSectionChevron">&lt;</span>
+                          <SidebarChevron open={categoryManageSectionOpen("edit")} />
                         </summary>
                         <div className="sidebarSubsectionBody">
                           <label>
@@ -1374,7 +1980,7 @@ function App() {
                       <LineIcon name="grid" size={16} />
                       <span>セル登録</span>
                     </div>
-                    <span className="sidebarSectionChevron">&lt;</span>
+                    <SidebarChevron open={sidebarSectionOpen("cellRegister")} />
                   </summary>
                   <div className="sidebarSectionBody">
                     <div className="registerTopActions">
@@ -1399,7 +2005,7 @@ function App() {
                       アイコン
                       <div className="iconSelectRow">
                         <select value={itemForm.iconName} onChange={(event) => setItemForm({ ...itemForm, iconName: event.target.value })}>
-                          {LINE_ICON_OPTIONS.map((iconName) => <option key={iconName} value={iconName}>{iconName}</option>)}
+                          {SORTED_LINE_ICON_OPTIONS.map((iconName) => <option key={iconName} value={iconName}>{iconName}</option>)}
                         </select>
                         <span className="iconInlinePreview">
                           <LineIcon name={itemForm.iconName} size={20} />
@@ -1425,7 +2031,7 @@ function App() {
                       <Settings size={16} />
                       <span>設定</span>
                     </div>
-                    <span className="sidebarSectionChevron">&lt;</span>
+                    <SidebarChevron open={sidebarSectionOpen("settings")} />
                   </summary>
                   <div className="sidebarSectionBody">
                     <button onClick={() => setSettingsOpen(true)}><Settings size={17} />設定を開く</button>
@@ -1490,7 +2096,10 @@ function App() {
         <SettingsPanel
           settings={settings}
           onUpdate={updateSettings}
+          onAddExtensionIconTypes={addExtensionIconTypes}
           onUpdateIconType={updateIconType}
+          onUpdateExtensionIconType={updateExtensionIconType}
+          onDeleteExtensionIconType={deleteExtensionIconType}
           onResetIconTypes={resetIconTypes}
           onClose={() => setSettingsOpen(false)}
         />
@@ -1513,7 +2122,11 @@ function App() {
         <div
           ref={hoverPreviewRef}
           className="textHoverPreview"
-          style={{ left: hoverPreview.x, top: hoverPreview.y }}
+          style={{
+            left: hoverPreview.x,
+            top: hoverPreview.y,
+            "--preview-accent-color": getItemCategoryAccentColor(hoverPreview.item)
+          }}
           onMouseEnter={handlePreviewHoverStart}
           onMouseLeave={handlePreviewHoverEnd}
           onMouseUp={updateHoverPreviewSelection}
@@ -1552,6 +2165,40 @@ function App() {
         </div>,
         document.body
       )}
+      {hoverPdfPreview && createPortal(
+        <div
+          className="pdfHoverPreview"
+          style={{
+            left: hoverPdfPreview.x,
+            top: hoverPdfPreview.y,
+            width: hoverPdfPreview.width,
+            height: hoverPdfPreview.height,
+            "--preview-accent-color": getItemCategoryAccentColor(hoverPdfPreview.item)
+          }}
+          onMouseEnter={handlePdfPreviewHoverStart}
+          onMouseLeave={handlePdfPreviewHoverEnd}
+        >
+          <div className="pdfPreviewHeader">
+            <span className="pdfPreviewTitle">{hoverPdfPreview.item?.name || hoverPdfPreview.item?.path}</span>
+            <button
+              type="button"
+              className="pdfPreviewPinButton"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={pinHoverPdfPreview}
+            >
+              Pin
+            </button>
+          </div>
+          <div className="pdfHoverCanvasWrap">
+            <canvas ref={hoverPdfCanvasRef} />
+          </div>
+          <div className="pdfPreviewFooter">1 / {hoverPdfPreview.pageCount}</div>
+        </div>,
+        document.body
+      )}
       {pinnedHoverPreview && createPortal(
         <div
           ref={pinnedPreviewRef}
@@ -1560,7 +2207,8 @@ function App() {
             left: pinnedHoverPreview.x,
             top: pinnedHoverPreview.y,
             width: pinnedHoverPreview.width,
-            height: pinnedHoverPreview.height
+            height: pinnedHoverPreview.height,
+            "--preview-accent-color": getItemCategoryAccentColor(pinnedHoverPreview.item)
           }}
           onMouseUp={updatePinnedPreviewSelection}
           onKeyUp={updatePinnedPreviewSelection}
@@ -1641,6 +2289,80 @@ function App() {
             onPointerMove={handlePinnedPreviewResizeMove}
             onPointerUp={handlePinnedPreviewResizeEnd}
             onPointerCancel={handlePinnedPreviewResizeEnd}
+          />
+        </div>,
+        document.body
+      )}
+      {pinnedPdfPreview && createPortal(
+        <div
+          className="pinnedPdfPreview"
+          style={{
+            left: pinnedPdfPreview.x,
+            top: pinnedPdfPreview.y,
+            width: pinnedPdfPreview.width,
+            height: pinnedPdfPreview.height,
+            "--preview-accent-color": getItemCategoryAccentColor(pinnedPdfPreview.item)
+          }}
+        >
+          <div
+            className="pinnedPdfPreviewHeader"
+            onPointerDown={handlePinnedPdfDragStart}
+            onPointerMove={handlePinnedPdfDragMove}
+            onPointerUp={handlePinnedPdfDragEnd}
+            onPointerCancel={handlePinnedPdfDragEnd}
+          >
+            <span className="pinnedPdfPreviewTitle">{pinnedPdfPreview.item?.name || pinnedPdfPreview.item?.path}</span>
+            <div className="pinnedPdfPreviewActions">
+              <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={goPrevPdfPage}>Prev</button>
+              <span>{pinnedPdfPreview.pageNumber} / {pinnedPdfPreview.pageCount}</span>
+              <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={goNextPdfPage}>Next</button>
+              <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={togglePdfSpreadMode}>
+                {pinnedPdfPreview.spreadMode === "single" ? "1P" : "2P"}
+              </button>
+              <button
+                type="button"
+                title={pinnedPdfPreview.bindingDirection === "right" ? "右開き" : "左開き"}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={togglePdfBindingDirection}
+              >
+                {pinnedPdfPreview.bindingDirection === "right" ? "→" : "←"}
+              </button>
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => setPinnedPdfPreview((prev) => prev ? { ...prev, searchOpen: true } : prev)}
+              >
+                Find
+              </button>
+              <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => setPinnedPdfPreview(null)}>×</button>
+            </div>
+          </div>
+          {pinnedPdfPreview.searchOpen && (
+            <div className="pinnedPdfSearchBar">
+              <input
+                value={pinnedPdfPreview.searchQuery}
+                onChange={(event) => updatePdfSearchQuery(event.target.value)}
+                placeholder="PDF内を検索"
+              />
+              <span>
+                {pinnedPdfPreview.searchResults.length
+                  ? `${pinnedPdfPreview.searchIndex + 1}/${pinnedPdfPreview.searchResults.length}`
+                  : "0/0"}
+              </span>
+              <button type="button" onClick={goPrevPdfSearchResult}>↑</button>
+              <button type="button" onClick={goNextPdfSearchResult}>↓</button>
+            </div>
+          )}
+          <div className={`pinnedPdfCanvasArea mode-${pinnedPdfPreview.spreadMode}`}>
+            <canvas ref={pinnedPdfCanvasLeftRef} />
+            {pinnedPdfPreview.spreadMode === "double" && <canvas ref={pinnedPdfCanvasRightRef} />}
+          </div>
+          <div
+            className="pinnedPdfPreviewResizeHandle"
+            onPointerDown={handlePinnedPdfResizeStart}
+            onPointerMove={handlePinnedPdfResizeMove}
+            onPointerUp={handlePinnedPdfResizeEnd}
+            onPointerCancel={handlePinnedPdfResizeEnd}
           />
         </div>,
         document.body
@@ -1777,7 +2499,7 @@ function Cell({
   onHoverItemStart,
   onHoverItemEnd
 }) {
-  const iconType = getIconTypeSetting(item?.item_type, settings);
+  const iconType = getItemIconSetting(item, settings);
   const iconName = item?.icon_name || iconType.icon;
   const iconColor = item?.icon_color || iconType.strokeColor;
   const iconBackground = item ? hexToRgba(
@@ -1966,7 +2688,7 @@ function ContextMenu({ x, y, item, disabled, onClose, onRegister, onOpen, onReve
 }
 
 function ItemEditDialog({ item, settings, onClose, onSave }) {
-  const iconType = getIconTypeSetting(item?.item_type, settings);
+  const iconType = getItemIconSetting(item, settings);
   const [draft, setDraft] = useState({
     name: item?.name || "",
     path: item?.path || "",
@@ -1999,7 +2721,7 @@ function ItemEditDialog({ item, settings, onClose, onSave }) {
             アイコン名
             <div className="iconSelectRow">
               <select value={draft.iconName} onChange={(event) => setDraft({ ...draft, iconName: event.target.value })}>
-                {LINE_ICON_OPTIONS.map((iconName) => <option key={iconName} value={iconName}>{iconName}</option>)}
+                {SORTED_LINE_ICON_OPTIONS.map((iconName) => <option key={iconName} value={iconName}>{iconName}</option>)}
               </select>
               <span className="iconInlinePreview" style={{ background: hexToRgba(draft.iconBackgroundColor, draft.iconBackgroundOpacity) }}>
                 <LineIcon name={draft.iconName} color={draft.iconColor} size={22} />
@@ -2050,8 +2772,35 @@ function ItemEditDialog({ item, settings, onClose, onSave }) {
   );
 }
 
-function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes, onClose }) {
+function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIconType, onUpdateExtensionIconType, onDeleteExtensionIconType, onResetIconTypes, onClose }) {
   const current = normalizeSettings(settings || {});
+  const [extensionDraft, setExtensionDraft] = useState("");
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconPickerTarget, setIconPickerTarget] = useState(null);
+  const [iconPickerQuery, setIconPickerQuery] = useState("");
+  const [settingsPanelPosition, setSettingsPanelPosition] = useState({ x: 80, y: 48 });
+  const settingsPanelRef = useRef(null);
+  const settingsPanelDragRef = useRef(null);
+  const extensionIconEntries = Object.entries(current.extensionIconTypes || {}).sort(([left], [right]) => left.localeCompare(right));
+  const iconSettingRows = [
+    {
+      rowType: "kind",
+      key: "folder",
+      label: "フォルダ",
+      fixed: true,
+      setting: getIconTypeSetting("folder", current)
+    },
+    ...extensionIconEntries.map(([extension, setting]) => ({
+      rowType: "extension",
+      key: extension,
+      label: extension,
+      fixed: false,
+      setting
+    }))
+  ];
+  const filteredIconOptions = SORTED_LINE_ICON_OPTIONS.filter((iconName) =>
+    iconName.toLowerCase().includes(iconPickerQuery.trim().toLowerCase())
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2063,6 +2812,28 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
     }).catch(() => {});
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!iconPickerOpen) return undefined;
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setIconPickerOpen(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [iconPickerOpen]);
+
+  useEffect(() => {
+    function handleResize() {
+      setSettingsPanelPosition((prev) => clampSettingsPanelPosition(prev.x, prev.y));
+    }
+    window.addEventListener("resize", handleResize);
+    window.requestAnimationFrame(handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
     };
   }, []);
 
@@ -2093,15 +2864,105 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
     onUpdate({ ui: { settingsSections: { [key]: open } } });
   }
 
+  function openIconPicker(row) {
+    setIconPickerTarget({ type: row.rowType, key: row.key });
+    setIconPickerQuery("");
+    setIconPickerOpen(true);
+  }
+
+  function isIconPickerSelected(iconName) {
+    if (!iconPickerTarget) return false;
+    if (iconPickerTarget.type === "kind") {
+      return getIconTypeSetting(iconPickerTarget.key, current)?.icon === iconName;
+    }
+    if (iconPickerTarget.type === "extension") {
+      return current.extensionIconTypes?.[iconPickerTarget.key]?.icon === iconName;
+    }
+    return false;
+  }
+
+  function applyIconPickerSelection(iconName) {
+    if (!iconPickerTarget) return;
+    if (iconPickerTarget.type === "kind") {
+      onUpdateIconType(iconPickerTarget.key, { icon: iconName });
+      return;
+    }
+    if (iconPickerTarget.type === "extension") {
+      onUpdateExtensionIconType(iconPickerTarget.key, { icon: iconName });
+    }
+  }
+
+  function updateIconSettingRow(row, patch) {
+    if (row.rowType === "kind") {
+      onUpdateIconType(row.key, patch);
+      return;
+    }
+    onUpdateExtensionIconType(row.key, patch);
+  }
+
+  function clampSettingsPanelPosition(x, y) {
+    const padding = 8;
+    const rect = settingsPanelRef.current?.getBoundingClientRect();
+    const width = rect?.width ?? 720;
+    const height = rect?.height ?? 520;
+    const maxX = Math.max(padding, window.innerWidth - width - padding);
+    const maxY = Math.max(padding, window.innerHeight - height - padding);
+    return {
+      x: Math.max(padding, Math.min(x, maxX)),
+      y: Math.max(padding, Math.min(y, maxY))
+    };
+  }
+
+  function handleSettingsPanelDragStart(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    settingsPanelDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: settingsPanelPosition.x,
+      originY: settingsPanelPosition.y
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleSettingsPanelDragMove(event) {
+    const drag = settingsPanelDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const nextX = drag.originX + event.clientX - drag.startX;
+    const nextY = drag.originY + event.clientY - drag.startY;
+    setSettingsPanelPosition(clampSettingsPanelPosition(nextX, nextY));
+  }
+
+  function handleSettingsPanelDragEnd(event) {
+    if (settingsPanelDragRef.current?.pointerId === event.pointerId) {
+      settingsPanelDragRef.current = null;
+    }
+  }
+
   return (
     <div className="settingsOverlay" role="presentation" onMouseDown={onClose}>
-      <section className="settingsModal" role="dialog" aria-modal="true" aria-label="設定" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="settingsHeader">
+      <section
+        ref={settingsPanelRef}
+        className="settingsModal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="設定"
+        style={{ left: settingsPanelPosition.x, top: settingsPanelPosition.y }}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header
+          className="settingsHeader"
+          onPointerDown={handleSettingsPanelDragStart}
+          onPointerMove={handleSettingsPanelDragMove}
+          onPointerUp={handleSettingsPanelDragEnd}
+          onPointerCancel={handleSettingsPanelDragEnd}
+        >
           <div>
             <h2><Settings size={19} />設定</h2>
             <span>ワークスペースごとに保存されます</span>
           </div>
-          <button onClick={onClose}>閉じる</button>
+          <button onPointerDown={(event) => event.stopPropagation()} onClick={onClose}>閉じる</button>
         </header>
 
         <div className="settingsBody">
@@ -2212,49 +3073,78 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
               <span className="settingsSectionChevron">›</span>
             </summary>
             <div className="settingsSectionBody">
-            <div className="iconTypeTable">
-              <div className="iconTypeHeader">
-                <span>種類</span>
-                <span>表示名</span>
+            <div className="extensionIconAddRow">
+              <input
+                value={extensionDraft}
+                placeholder="拡張子を追加: pdf, xlsx, docx"
+                onChange={(event) => setExtensionDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  if (onAddExtensionIconTypes(extensionDraft)) setExtensionDraft("");
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (onAddExtensionIconTypes(extensionDraft)) setExtensionDraft("");
+                }}
+              >
+                追加
+              </button>
+            </div>
+            <div className="iconTypeTable extensionIconTable">
+              <div className="iconTypeHeader extensionIconHeader">
+                <span>種類/拡張子</span>
                 <span>アイコン</span>
                 <span>線色</span>
                 <span>背景色</span>
                 <span>背景透過</span>
                 <span>プレビュー</span>
+                <span>削除</span>
               </div>
-              {itemTypes.map(({ value }) => {
-                const type = getIconTypeSetting(value, current);
-                return (
-                  <div className="iconTypeRow" key={value}>
-                    <code>{value}</code>
-                    <input value={type.label} onChange={(event) => onUpdateIconType(value, { label: event.target.value })} />
-                    <select value={type.icon} onChange={(event) => onUpdateIconType(value, { icon: event.target.value })}>
-                      {LINE_ICON_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
-                    </select>
-                    <input type="color" value={type.strokeColor} onChange={(event) => onUpdateIconType(value, { strokeColor: event.target.value })} />
-                    <input type="color" value={type.backgroundColor} onChange={(event) => onUpdateIconType(value, { backgroundColor: event.target.value })} />
-                    <label className="miniRange">
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={type.backgroundOpacity}
-                        onChange={(event) => onUpdateIconType(value, { backgroundOpacity: Number(event.target.value) })}
-                      />
-                      <output>{Number(type.backgroundOpacity).toFixed(2)}</output>
-                    </label>
-                    <span
-                      className="iconPreview"
-                      style={{ background: hexToRgba(type.backgroundColor, type.backgroundOpacity ?? 0.9) }}
-                    >
-                      <LineIcon name={type.icon} color={type.strokeColor} size={28} />
-                    </span>
-                  </div>
-                );
-              })}
+              <div className="extensionIconList">
+                {iconSettingRows.map((row) => {
+                  const type = row.setting;
+                  return (
+                    <div className={`iconTypeRow extensionIconRow ${row.fixed ? "fixed" : ""}`} key={`${row.rowType}:${row.key}`}>
+                      <code>{row.label}</code>
+                      <div className="iconSettingPickerRow">
+                        <span className="iconSettingCurrentIcon" title={type.icon}>
+                          <LineIcon name={type.icon} color={type.strokeColor} size={22} />
+                        </span>
+                        <button type="button" onClick={() => openIconPicker(row)}>アイコンを選択</button>
+                      </div>
+                      <input type="color" value={type.strokeColor} onChange={(event) => updateIconSettingRow(row, { strokeColor: event.target.value })} />
+                      <input type="color" value={type.backgroundColor} onChange={(event) => updateIconSettingRow(row, { backgroundColor: event.target.value })} />
+                      <label className="miniRange">
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={type.backgroundOpacity}
+                          onChange={(event) => updateIconSettingRow(row, { backgroundOpacity: Number(event.target.value) })}
+                        />
+                        <output>{Number(type.backgroundOpacity).toFixed(2)}</output>
+                      </label>
+                      <span
+                        className="iconPreview"
+                        style={{ background: hexToRgba(type.backgroundColor, type.backgroundOpacity ?? 0.9) }}
+                      >
+                        <LineIcon name={type.icon} color={type.strokeColor} size={24} />
+                      </span>
+                      {row.fixed ? (
+                        <span className="iconSettingFixedLabel">固定</span>
+                      ) : (
+                        <button type="button" className="miniDangerButton" onClick={() => onDeleteExtensionIconType(row.key)}>削除</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <button onClick={onResetIconTypes}>アイコン設定を初期値に戻す</button>
+            <button onClick={onResetIconTypes}>拡張子アイコン設定を初期化</button>
             </div>
           </details>
 
@@ -2347,6 +3237,48 @@ function SettingsPanel({ settings, onUpdate, onUpdateIconType, onResetIconTypes,
             </div>
           </details>
         </div>
+        {iconPickerOpen && (
+          <div className="iconPickerOverlay" role="presentation" onMouseDown={() => setIconPickerOpen(false)}>
+            <div
+              className="iconPickerModal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="アイコンを選択"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="iconPickerHeader">
+                <div>
+                  <strong>アイコンを選択</strong>
+                  <div className="iconPickerSubtext">使用するラインアイコンを選択してください</div>
+                </div>
+                <button type="button" onClick={() => setIconPickerOpen(false)}>×</button>
+              </div>
+              <input
+                className="iconPickerSearch"
+                value={iconPickerQuery}
+                onChange={(event) => setIconPickerQuery(event.target.value)}
+                placeholder="アイコンを検索"
+                autoFocus
+              />
+              <div className="iconPickerGrid">
+                {filteredIconOptions.map((iconName) => (
+                  <button
+                    key={iconName}
+                    type="button"
+                    className={`iconPickerOption ${isIconPickerSelected(iconName) ? "selected" : ""}`}
+                    title={iconName}
+                    onClick={() => {
+                      applyIconPickerSelection(iconName);
+                      setIconPickerOpen(false);
+                    }}
+                  >
+                    <LineIcon name={iconName} size={22} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

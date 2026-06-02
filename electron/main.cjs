@@ -85,6 +85,7 @@ const defaultSettings = {
   system: {
     openAtLogin: false
   },
+  extensionIconTypes: {},
   iconTypes: {
     folder: { label: "フォルダ", icon: "folder", strokeColor: "#f5c542", backgroundColor: "#20242a", backgroundOpacity: 0.9 },
     pdf: { label: "PDF", icon: "fileText", strokeColor: "#ef4444", backgroundColor: "#2a2020", backgroundOpacity: 0.9 },
@@ -127,6 +128,27 @@ function mergeDeep(base, override) {
     }
   }
   return result;
+}
+
+function normalizeExtensionKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/^\.+/, "");
+}
+
+function normalizeExtensionIconTypes(rawExtensionIconTypes) {
+  const extensionIconTypes = {};
+  for (const [extension, setting] of Object.entries(rawExtensionIconTypes || {})) {
+    const key = normalizeExtensionKey(extension);
+    if (!key) continue;
+    const current = setting || {};
+    extensionIconTypes[key] = {
+      label: key,
+      icon: current.icon || defaultSettings.iconTypes.default.icon,
+      strokeColor: current.strokeColor || current.color || "#000000",
+      backgroundColor: current.backgroundColor || current.iconBackgroundColor || "#000000",
+      backgroundOpacity: current.backgroundOpacity ?? current.iconBackgroundOpacity ?? 0
+    };
+  }
+  return extensionIconTypes;
 }
 
 function normalizeSettings(rawSettings) {
@@ -175,6 +197,7 @@ function normalizeSettings(rawSettings) {
         ...(merged.ui?.cell || {})
       }
     },
+    extensionIconTypes: normalizeExtensionIconTypes(merged.extensionIconTypes),
     iconTypes: normalizedIconTypes
   };
 }
@@ -449,8 +472,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 360,
-    minHeight: 420,
+    minWidth: 260,
+    minHeight: 260,
     title: "GridDesk",
     backgroundColor: "#00000000",
     transparent: true,
@@ -555,11 +578,34 @@ ipcMain.handle("file:saveText", async (_event, payload) => {
   }
 });
 
+ipcMain.handle("file:readPdfPreview", async (_event, targetPath) => {
+  try {
+    if (!targetPath || typeof targetPath !== "string") return { ok: false, error: "パスが空です" };
+    if (/^https?:\/\//i.test(targetPath)) return { ok: false, skipped: true, reason: "URLは対象外です" };
+
+    const ext = path.extname(targetPath).toLowerCase();
+    if (ext !== ".pdf") return { ok: false, skipped: true, reason: "PDFではありません" };
+
+    const stat = await fsp.stat(targetPath);
+    if (!stat.isFile()) return { ok: false, skipped: true, reason: "ファイルではありません" };
+
+    const buffer = await fsp.readFile(targetPath);
+    return {
+      ok: true,
+      data: Array.from(buffer),
+      size: stat.size,
+      name: path.basename(targetPath)
+    };
+  } catch (error) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
 ipcMain.handle("window:setWidth", async (event, width) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
   if (!browserWindow) return { ok: false, error: "BrowserWindow not found" };
   const bounds = browserWindow.getBounds();
-  const minAutoFitWidth = 360;
+  const minAutoFitWidth = 260;
   const maxAutoFitWidth = Math.min(1800, screen.getPrimaryDisplay().workAreaSize.width);
   const safeWidth = Math.max(minAutoFitWidth, Math.min(Number(width) || bounds.width, maxAutoFitWidth));
   console.log("GridDesk window:setWidth", {
@@ -569,6 +615,29 @@ ipcMain.handle("window:setWidth", async (event, width) => {
   });
   browserWindow.setBounds({ ...bounds, width: safeWidth });
   return { ok: true, width: safeWidth };
+});
+
+ipcMain.handle("window:setBounds", async (event, boundsPatch) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!browserWindow) return { ok: false, error: "BrowserWindow not found" };
+
+  const current = browserWindow.getBounds();
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const minAutoFitWidth = 260;
+  const minAutoFitHeight = 260;
+  const maxAutoFitWidth = Math.min(1800, workArea.width);
+  const maxAutoFitHeight = Math.min(1200, workArea.height);
+  const width = Math.max(
+    minAutoFitWidth,
+    Math.min(Number(boundsPatch?.width) || current.width, maxAutoFitWidth)
+  );
+  const height = Math.max(
+    minAutoFitHeight,
+    Math.min(Number(boundsPatch?.height) || current.height, maxAutoFitHeight)
+  );
+
+  browserWindow.setBounds({ ...current, width, height });
+  return { ok: true, width, height };
 });
 
 ipcMain.handle("workspace:create", async () => {
