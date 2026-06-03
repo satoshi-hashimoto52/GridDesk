@@ -630,7 +630,7 @@ function App() {
   const previewCacheRef = useRef(new Map());
   const pdfDocumentCacheRef = useRef(new Map());
   const pdfBindingDirectionRef = useRef(new Map());
-  const [workMode, setWorkMode] = useState(WORK_MODES.REGISTER);
+  const [workMode, setWorkMode] = useState(WORK_MODES.NORMAL);
   const [dragTargetCell, setDragTargetCell] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [hoverPreview, setHoverPreview] = useState(null);
@@ -3192,11 +3192,11 @@ function Cell({
   onHoverItemEnd
 }) {
   const iconType = getItemIconSetting(item, settings);
-  const iconName = item?.icon_name || iconType.icon;
-  const iconColor = item?.icon_color || iconType.strokeColor;
+  const iconName = iconType.icon;
+  const iconColor = iconType.strokeColor;
   const iconBackground = item ? hexToRgba(
-    item.icon_background_color || iconType.backgroundColor,
-    item.icon_background_opacity ?? iconType.backgroundOpacity ?? 0.9
+    iconType.backgroundColor,
+    iconType.backgroundOpacity ?? 0.9
   ) : undefined;
   const extensionLabel = getExtensionLabel(item);
   const showTypeBadge = settings?.ui?.cell?.showTypeBadge ?? true;

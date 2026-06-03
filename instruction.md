@@ -1,21 +1,13 @@
-了解です。いまの報告を見る限り、**Windows実機でUIが表示されない件はまだ未確認・未修正**のままです。
-次に Codex へ渡すなら、前回の「配布設定」ではなく、**Windows版のUI非表示を実機前提で切り分ける指示**に絞った方がよいです。
+# GridDesk 緊急修正指示：設定アイコン反映不具合・フォルダ起動不具合の修正
 
-以下をそのまま渡してください。
+## 症状
 
-# GridDesk 緊急修正指示：Windows版で起動するがUIが表示されない問題の切り分けと修正
+現在、以下の不具合が発生しています。
 
-## 現状
+1. 設定からアイコンを変更しても、既に配置済みのセルアイコンが変化しない
+2. フォルダをダブルクリックしても開かなくなった
 
-macOS版 `.app` は正常に起動し、UIも表示されます。
-Windows版は以下のどちらも起動はしますが、UIが表示されません。
-
-* `GridDesk-0.1.0-win-x64-setup.exe`
-* `GridDesk-0.1.0-win-x64-portable.exe`
-
-前回作業では Windows版のビルド生成までは確認されていますが、Windows実機起動確認は未実施です。
-
-今回は **Windows版でUIが表示されること** を最優先で修正してください。
+今回はこの2点のみ修正してください。
 
 ---
 
@@ -23,279 +15,378 @@ Windows版は以下のどちらも起動はしますが、UIが表示されま�
 
 今回は以下を触らないでください。
 
-* 最近開いたワークスペース削除機能
-* セル登録ロジック
 * DBスキーマ
+* セル登録仕様
+* カテゴリ管理仕様
 * PDFプレビュー
-* テキストホバー/ピン留め機能
+* テキストホバー/ピン留め
 * Markdown表示
-* アイコン設定
 * 検索機能
-* カテゴリ管理
-* ワークスペース仕様
+* 最近開いたワークスペース履歴
+* Windows版 better-sqlite3 対応
+* 配布ビルド設定の大幅変更
 
 ---
 
-# 1. Windowsでは透明ウィンドウを無効化する
+# 1. 設定からアイコン変更しても配置済みアイコンが変化しない問題
 
-## 目的
+## 想定原因
 
-Windowsで `transparent: true` / `frame: false` の組み合わせにより、UIが表示されない可能性があります。
-
-Windowsではまず確実にUIを表示するため、以下にしてください。
+最近の修正で、配置済みアイテム側に以下のような個別アイコン値を保存・優先する実装が残っている可能性があります。
 
 ```text
-transparent: false
-backgroundColor: "#f6f7f4"
-frame: true
+item.iconName
+item.icon_name
+item.icon_color
+item.icon_background_color
+item.icon_background_opacity
 ```
 
-macOSでは従来の透過/独自フレームを維持して構いません。
+そのため、設定画面で種類別・拡張子別・フォルダ用アイコンを変更しても、既存アイテムが item 側の古い値を優先してしまい、表示が更新されない可能性があります。
 
 ---
 
-## 修正対象
+## 変更後仕様
 
-`electron/main.cjs` の `createWindow()` を確認してください。
+設定のアイコン変更は、配置済みアイコンにも即時反映してください。
 
-現在の `BrowserWindow` 設定をOS別にしてください。
+基本方針:
 
-```js
-const isMac = process.platform === "darwin";
-const isWindows = process.platform === "win32";
+```text
+通常表示:
+  設定側のアイコンルールを使って描画する
 
-function createWindow() {
-  const useTransparentWindow = isMac;
+個別アイコン変更を明示したアイテムのみ:
+  item個別設定を優先する
+```
 
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 260,
-    minHeight: 260,
-    title: "GridDesk",
+ただし、現状で個別アイコン編集が不安定なら、まずは **配置済みアイコンも常に設定側を参照する** 形に戻してください。
 
-    backgroundColor: useTransparentWindow ? "#00000000" : "#f6f7f4",
-    transparent: useTransparentWindow,
+---
 
-    frame: isWindows ? true : false,
+## アイコン解決優先順位
 
-    titleBarStyle: isMac ? "hiddenInset" : undefined,
-    trafficLightPosition: isMac ? { x: 12, y: 12 } : undefined,
+`resolveItemIconConfig(item)` または類似の関数を確認し、以下の優先順位にしてください。
 
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
-
-  ...
-}
+```text
+1. item に明示的な個別アイコン設定がある場合のみ、それを使う
+2. フォルダなら settings の folder 設定
+3. URLなら settings の url 設定
+4. アプリなら settings の app 設定
+5. 通常ファイルなら拡張子別設定
+6. 通常ファイル汎用設定
 ```
 
 重要:
 
-```text
-Windows:
-  transparent: false
-  backgroundColor: "#f6f7f4"
-  frame: true
-
-macOS:
-  transparent: true
-  backgroundColor: "#00000000"
-  frame: false
-```
+* 登録時に自動保存された古い `iconName` / `icon_color` を「個別設定」とみなさないこと
+* ユーザーが右クリック等で明示的に個別変更した場合のみ、個別設定として扱うこと
+* その判定用のフラグが無いなら、今回は item 側の icon 系カラムを表示解決で使わないこと
 
 ---
 
-# 2. Windows版で renderer 読み込みログを出す
+## 修正例
 
-Windows実機で原因を確認できるよう、以下のログを `mainWindow` 作成直後に追加してください。
-
-```js
-mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
-  console.error("Renderer did-fail-load", {
-    errorCode,
-    errorDescription,
-    validatedURL
-  });
-});
-
-mainWindow.webContents.on("render-process-gone", (_event, details) => {
-  console.error("Renderer process gone", details);
-});
-
-mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-  console.log("Renderer console:", {
-    level,
-    message,
-    line,
-    sourceId
-  });
-});
-```
-
----
-
-# 3. WindowsでDevToolsを開けるようにする
-
-デバッグ時だけ DevTools を開けるようにしてください。
+現在このようになっている場合:
 
 ```js
-if (process.env.GRIDDESK_DEBUG_RENDERER === "1") {
-  mainWindow.webContents.openDevTools({ mode: "detach" });
+function resolveItemIconConfig(item) {
+  if (item.iconName || item.icon_name) {
+    return {
+      iconName: item.iconName ?? item.icon_name,
+      color: item.iconColor ?? item.icon_color,
+      backgroundColor: item.iconBackgroundColor ?? item.icon_background_color,
+      backgroundOpacity: item.iconBackgroundOpacity ?? item.icon_background_opacity
+    };
+  }
+
+  return resolveFromSettings(item);
 }
 ```
 
-Windows確認時は以下で起動してください。
-
-PowerShell:
-
-```powershell
-$env:GRIDDESK_DEBUG_RENDERER="1"
-.\GridDesk.exe
-```
-
-cmd:
-
-```bat
-set GRIDDESK_DEBUG_RENDERER=1
-GridDesk.exe
-```
-
----
-
-# 4. Vite asset path を再確認する
-
-macOS版が動いていても、Windows版パッケージで `dist/index.html` が壊れていないか確認してください。
-
-`dist/index.html` は以下になっている必要があります。
-
-OK:
-
-```html
-<script type="module" crossorigin src="./assets/index-xxxx.js"></script>
-<link rel="stylesheet" crossorigin href="./assets/index-xxxx.css">
-```
-
-NG:
-
-```html
-<script type="module" crossorigin src="/assets/index-xxxx.js"></script>
-<link rel="stylesheet" crossorigin href="/assets/index-xxxx.css">
-```
-
-`/assets/...` の場合は、Vite設定に `base: "./"` を追加または再確認してください。
-
----
-
-# 5. Windows向けビルドを再生成する
-
-macOS側で修正後、以下を実行してください。
-
-```bash
-node --check electron/main.cjs
-node --check electron/preload.cjs
-npm run build
-npm run dist:win
-```
-
-生成物:
-
-```text
-release/GridDesk-0.1.0-win-x64-setup.exe
-release/GridDesk-0.1.0-win-x64-portable.exe
-release/win-unpacked/
-```
-
-Windowsへ渡す場合:
-
-* portable exe を渡す
-* または `release/win-unpacked/` フォルダ一式を渡す
-* `win-unpacked/GridDesk.exe` 単体では渡さない
-
----
-
-# 6. Windows実機で確認すること
-
-Windows実機で以下を確認してください。
-
-## portable版
-
-```text
-GridDesk-0.1.0-win-x64-portable.exe
-```
-
-確認:
-
-* 起動する
-* UIが表示される
-* ワークスペース選択画面が見える
-* ワークスペース作成/読込ができる
-
-## installer版
-
-```text
-GridDesk-0.1.0-win-x64-setup.exe
-```
-
-確認:
-
-* インストールできる
-* 起動する
-* UIが表示される
-* ワークスペース作成/読込ができる
-
-## win-unpacked版
-
-`win-unpacked` フォルダごとWindowsへコピーして確認してください。
-
-```text
-win-unpacked/
-  GridDesk.exe
-  resources/
-  *.dll
-  locales/
-  ...
-```
-
-`GridDesk.exe` 単体コピーでは不可です。
-
----
-
-# 7. Windows版UIが出た後の扱い
-
-Windows版で UI が表示されることを確認できたら、Windowsの透明化は一旦不要です。
-
-Windowsの最終推奨設定:
+以下のように修正してください。
 
 ```js
-transparent: false,
-backgroundColor: "#f6f7f4",
-frame: true
+function resolveItemIconConfig(item) {
+  const hasExplicitItemIcon =
+    item.custom_icon_enabled === 1 ||
+    item.customIconEnabled === true ||
+    item.icon_override === 1 ||
+    item.iconOverride === true;
+
+  if (hasExplicitItemIcon) {
+    return {
+      iconName: item.iconName ?? item.icon_name,
+      color: item.iconColor ?? item.icon_color,
+      backgroundColor: item.iconBackgroundColor ?? item.icon_background_color,
+      backgroundOpacity: item.iconBackgroundOpacity ?? item.icon_background_opacity
+    };
+  }
+
+  return resolveIconConfigFromSettings(item);
+}
 ```
 
-macOSの最終推奨設定:
+もし `custom_icon_enabled` のようなフラグが存在しない場合は、今回は安全優先で以下にしてください。
 
 ```js
-transparent: true,
-backgroundColor: "#00000000",
-frame: false,
-titleBarStyle: "hiddenInset"
+function resolveItemIconConfig(item) {
+  return resolveIconConfigFromSettings(item);
+}
 ```
 
 ---
 
-# 完了条件
+## settings変更時の再描画
 
-* Windows portable exe でUIが表示される
-* Windows installer exe でUIが表示される
-* Windowsでワークスペース選択画面が表示される
-* Windowsでワークスペース作成/読込ができる
-* macOS app の表示が壊れていない
-* `dist/index.html` の asset path が `./assets/...` である
-* renderer load error が出ていない
+設定変更後、配置済みアイコンが再描画されるようにしてください。
+
+以下を確認してください。
+
+```text
+settings state が更新されている
+resolveItemIconConfig が settings を参照している
+React の render 内で resolveItemIconConfig(item) を呼んでいる
+useMemo の依存配列に settings が入っている
+```
+
+NG例:
+
+```js
+const renderedItems = useMemo(() => {
+  return items.map(...)
+}, [items]);
+```
+
+settings を使っているなら、依存配列に settings を追加してください。
+
+```js
+const renderedItems = useMemo(() => {
+  return items.map(...)
+}, [items, settings]);
+```
+
+また、アイコン設定変更後に `items` の再読込だけに頼らないでください。
+settings state 更新だけで即時反映されるのが望ましいです。
+
+---
+
+## フォルダ固定行との関係
+
+アイコン設定一覧の先頭にある `フォルダ` 行でアイコン・線色・背景色・背景透過を変更したら、既に配置済みのフォルダセルにも反映してください。
+
+確認対象:
+
+```text
+フォルダ行のアイコン変更
+フォルダ行の線色変更
+フォルダ行の背景色変更
+フォルダ行の背景透過変更
+```
+
+---
+
+## 完了条件
+
+以下を実画面で確認してください。
+
+* 設定画面で `pdf` のアイコンを変更すると、既存の pdf セルアイコンが変わる
+* 設定画面で `txt` の色を変更すると、既存の txt セルアイコン色が変わる
+* 設定画面で `フォルダ` のアイコンを変更すると、既存のフォルダセルアイコンが変わる
+* 設定画面で `フォルダ` の色を変更すると、既存のフォルダセルアイコン色が変わる
+* アプリ再起動後も設定が維持される
+* 明示的な個別アイコン変更機能がある場合、その個別変更だけは優先される
+
+---
+
+# 2. フォルダが開かなくなった問題
+
+## 想定原因
+
+Mac安定版復旧、Windows対応、または起動処理変更の中で、フォルダ起動時の `shell.openPath()` / `shell.showItemInFolder()` の分岐が壊れた可能性があります。
+
+または、item type 判定が変わり、フォルダが通常ファイルやURL扱いになっている可能性があります。
+
+---
+
+## 変更後仕様
+
+フォルダセルをダブルクリックした場合、OS標準のファイルマネージャでそのフォルダを開いてください。
+
+macOS:
+
+```text
+Finder でフォルダを開く
+```
+
+Windows:
+
+```text
+Explorer でフォルダを開く
+```
+
+Electronでは基本的に以下を使ってください。
+
+```js
+shell.openPath(folderPath)
+```
+
+---
+
+## main 側の起動処理を確認
+
+`electron/main.cjs` で以下を検索してください。
+
+```text
+item:open
+openPath
+showItemInFolder
+shell.openExternal
+shell.openPath
+open item
+```
+
+フォルダの場合は必ず `shell.openPath(item.path)` を使ってください。
+
+例:
+
+```js
+ipcMain.handle("item:open", async (_event, item) => {
+  try {
+    const targetPath = item?.path;
+
+    if (!targetPath) {
+      return { ok: false, error: "パスが空です" };
+    }
+
+    if (/^https?:\/\//i.test(targetPath)) {
+      await shell.openExternal(targetPath);
+      return { ok: true };
+    }
+
+    const stat = await fs.promises.stat(targetPath);
+
+    if (stat.isDirectory()) {
+      const errorMessage = await shell.openPath(targetPath);
+
+      if (errorMessage) {
+        return { ok: false, error: errorMessage };
+      }
+
+      return { ok: true };
+    }
+
+    const errorMessage = await shell.openPath(targetPath);
+
+    if (errorMessage) {
+      return { ok: false, error: errorMessage };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message ?? error)
+    };
+  }
+});
+```
+
+重要:
+
+* フォルダは `shell.showItemInFolder(folderPath)` ではなく `shell.openPath(folderPath)` を使う
+* `showItemInFolder()` はファイルの場所を開く用途
+* フォルダそのものを開きたい場合は `openPath()`
+
+---
+
+## renderer 側のダブルクリック処理を確認
+
+`src/App.jsx` で以下を検索してください。
+
+```text
+onDoubleClick
+handleIconDoubleClick
+openItem
+api.openItem
+deleteCellMode
+registerMode
+```
+
+以下を確認してください。
+
+```text
+通常モードでダブルクリックしたときだけ openItem が呼ばれる
+削除モードでは起動しない
+登録モードでは起動しない
+フォルダ item も openItem に渡される
+```
+
+例:
+
+```js
+function handleIconDoubleClick(event, item) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (registerMode || deleteCellMode) {
+    return;
+  }
+
+  openItem(item);
+}
+```
+
+---
+
+## preload 側の API を確認
+
+`electron/preload.cjs` で `openItem` が公開されていることを確認してください。
+
+```js
+openItem: (item) => ipcRenderer.invoke("item:open", item)
+```
+
+名前が既存と違う場合は既存名に合わせてください。
+
+---
+
+## ログ追加
+
+フォルダが開かない場合に原因が見えるよう、一時ログを追加してください。
+
+```js
+console.log("Opening item", {
+  path: targetPath,
+  type: item?.type,
+  kind: item?.kind
+});
+```
+
+失敗時は renderer 側で alert または console.error に出してください。
+
+```js
+const result = await window.griddesk.openItem(item);
+
+if (result?.ok === false) {
+  console.error("Failed to open item", result);
+  alert(result.error || "開けませんでした");
+}
+```
+
+---
+
+## 完了条件
+
+以下を実画面で確認してください。
+
+* macOSでフォルダセルをダブルクリックするとFinderで開く
+* macOSでファイルセルをダブルクリックすると既定アプリで開く
+* URLセルをダブルクリックするとブラウザで開く
+* WindowsではフォルダセルをダブルクリックするとExplorerで開く
+* 起動失敗時にエラー内容が確認できる
+* 削除モードではダブルクリック起動しない
+* 登録モードではダブルクリック起動しない
 
 ---
 
@@ -304,38 +395,43 @@ titleBarStyle: "hiddenInset"
 ```text
 対応結果:
 
-Windows版UI非表示修正:
-- BrowserWindow設定をOS別分岐: OK / NG
-- Windows transparent:false: OK / NG
-- Windows frame:true: OK / NG
-- Windows backgroundColor設定: OK / NG
-- rendererログ追加: OK / NG
-- debug DevTools起動対応: OK / NG
-- dist/index.html asset path確認: OK / NG
-- Windows portable exe起動確認: OK / NG
-- Windows installer exe起動確認: OK / NG
-- macOS app継続確認: OK / NG
+1. 設定アイコン反映修正:
+- アイコン解決優先順位確認: OK / NG
+- item側古いicon値の自動優先を停止: OK / NG
+- settings変更で既存配置アイコン即時反映: OK / NG
+- フォルダ設定変更の既存フォルダ反映: OK / NG
+- useMemo依存配列確認: OK / NG
+
+2. フォルダ起動修正:
+- item:open 処理確認: OK / NG
+- フォルダは shell.openPath 使用: OK / NG
+- showItemInFolder誤用修正: OK / NG
+- rendererダブルクリック処理確認: OK / NG
+- preload API確認: OK / NG
+- macOS Finderでフォルダ起動確認: OK / NG
+- ファイル/URL起動維持: OK / NG
 
 変更ファイル:
+- src/App.jsx:
 - electron/main.cjs:
+- electron/preload.cjs:
 - その他:
 
 確認:
 - node --check electron/main.cjs:
 - node --check electron/preload.cjs:
 - npm run build:
-- npm run dist:win:
-- npm run dist:mac:
-- Windows portable exe起動:
-- Windows installer exe起動:
-- macOS app起動:
+- npm run dist:dir:
+- macOS .app 起動:
+- フォルダ起動:
+- 設定アイコン変更反映:
 
 作業ログ:
 - _md/yyyymmdd-hhmmss.md
 ```
 
 ビルド成功だけで完了扱いにしないでください。
-Windows実機で portable版または installer版を起動し、UIが表示されることを必ず確認してください。
+必ず実画面で、設定変更後に配置済みアイコンが変わることと、フォルダがFinder/Explorerで開くことを確認してください。
 
 ---
 
@@ -352,7 +448,21 @@ yyyymmdd-hhmmss.md
 この作業ログ作成も完了条件に含めてください。
 ログファイルが作成されていない場合は作業完了扱いにしないでください。
 
-今回のポイントは、**Windowsだけ透明ウィンドウをやめる**ことです。Mac版が正常なら、まずWindows版は通常フレーム・不透明背景で安定表示を優先するのが安全です。
+
+---
+
+# 作業ログ出力ルール
+
+今回の作業完了後、対応内容をプロジェクトディレクトリ内の `_md/` フォルダへ Markdown ファイルとして必ず書き出してください。
+
+ファイル名は以下の形式にしてください。
+
+```text
+yyyymmdd-hhmmss.md
+```
+
+この作業ログ作成も完了条件に含めてください。
+ログファイルが作成されていない場合は作業完了扱いにしないでください。
 
 ---
 
