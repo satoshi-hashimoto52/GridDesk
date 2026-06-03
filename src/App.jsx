@@ -316,6 +316,16 @@ function getPathBaseName(targetPath = "") {
   return parts[parts.length - 1] || normalized;
 }
 
+function getRecentWorkspacePath(recent) {
+  if (typeof recent === "string") return recent;
+  return recent?.path || recent?.workspacePath || "";
+}
+
+function getRecentWorkspaceName(recent) {
+  const recentPath = getRecentWorkspacePath(recent);
+  return recent?.name || getPathBaseName(recentPath) || recentPath;
+}
+
 function getExtensionLabel(item) {
   const targetPath = item?.path ?? "";
   const type = item?.item_type ?? item?.type ?? "";
@@ -1266,6 +1276,40 @@ function App() {
     try {
       const data = workspacePath ? await api.openWorkspacePath(workspacePath) : await action();
       adoptWorkspace(data);
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  async function removeRecentWorkspace(event, workspacePath) {
+    event.preventDefault();
+    event.stopPropagation();
+    const ok = window.confirm([
+      "このワークスペースを最近開いた履歴から削除しますか？",
+      "",
+      workspacePath,
+      "",
+      "フォルダやワークスペースのデータは削除されません。"
+    ].join("\n"));
+    if (!ok) return;
+    try {
+      const nextState = await api.removeRecentWorkspace(workspacePath);
+      setAppState(nextState || { recentWorkspaces: [] });
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  async function clearRecentWorkspaces() {
+    const ok = window.confirm([
+      "最近開いたワークスペースの履歴をすべて削除しますか？",
+      "",
+      "フォルダやワークスペースのデータは削除されません。"
+    ].join("\n"));
+    if (!ok) return;
+    try {
+      const nextState = await api.clearRecentWorkspaces();
+      setAppState(nextState || { recentWorkspaces: [] });
     } catch (error) {
       showError(error);
     }
@@ -2421,10 +2465,36 @@ function App() {
             </div>
             {appState.recentWorkspaces?.length > 0 && (
               <div className="recentList">
-                <h2>最近開いたワークスペース</h2>
-                {appState.recentWorkspaces.map((recent) => (
-                  <button key={recent} onClick={() => openWorkspace(null, recent)}>{recent}</button>
-                ))}
+                <div className="recentListHeader">
+                  <h2>最近開いたワークスペース</h2>
+                  <button type="button" className="recentClearButton" onClick={clearRecentWorkspaces}>
+                    履歴をすべて削除
+                  </button>
+                </div>
+                {appState.recentWorkspaces.map((recent) => {
+                  const recentPath = getRecentWorkspacePath(recent);
+                  const recentName = getRecentWorkspaceName(recent);
+                  return (
+                    <div className="recentWorkspaceRow" key={recentPath}>
+                      <button
+                        type="button"
+                        className="recentWorkspaceOpen"
+                        onClick={() => openWorkspace(null, recentPath)}
+                      >
+                        <span className="recentWorkspaceName">{recentName}</span>
+                        <span className="recentWorkspacePath">{recentPath}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="recentWorkspaceDelete"
+                        onClick={(event) => removeRecentWorkspace(event, recentPath)}
+                        title="履歴から削除"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>

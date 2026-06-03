@@ -51,7 +51,15 @@ npm start
 npm run build
 ```
 
-現在の `build` は Vite の production build です。アプリ配布用のパッケージングは今後実装予定です。
+`build` は Vite の production build です。配布アプリを作成する場合は `electron-builder` を使います。
+
+```bash
+npm run dist:dir
+npm run dist:mac
+npm run dist:win
+```
+
+成果物は `release/` に出力されます。詳細は [配布ビルド](./build.md) を参照してください。
 
 ## main/preload の構文チェック
 
@@ -83,6 +91,9 @@ getaddrinfo ENOTFOUND registry.npmjs.org
 | `npm run electron` | Electron を起動 |
 | `npm start` | Vite と Electron をまとめて起動 |
 | `npm run build` | renderer をビルド |
+| `npm run dist:dir` | インストーラなしの配布ディレクトリを作成 |
+| `npm run dist:mac` | macOS 向け配布物を作成 |
+| `npm run dist:win` | Windows 向け配布物を作成 |
 | `node --check electron/main.cjs` | main process の構文チェック |
 | `node --check electron/preload.cjs` | preload の構文チェック |
 | `sqlite3 --version` | SQLite CLI の確認 |

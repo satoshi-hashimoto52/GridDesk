@@ -3,6 +3,18 @@
 添付スクリーンショットと作業履歴を確認しました。  
 以下を修正してください。
 
+## 配布ビルド
+
+GridDesk の配布物は `electron-builder` で作成します。
+
+```bash
+npm run dist:dir
+npm run dist:mac
+npm run dist:win
+```
+
+成果物は `release/` に出力されます。macOS は `build/icon.icns`、Windows は `build/icon.ico` を使用する設定です。詳細は `docs/build.md` を参照してください。
+
 ---
 
 # 修正事項

@@ -1,559 +1,301 @@
-# GridDesk 実装指示：最近開いたワークスペース削除・macOS/Windows配布アプリ作成
+了解です。いまの報告を見る限り、**Windows実機でUIが表示されない件はまだ未確認・未修正**のままです。
+次に Codex へ渡すなら、前回の「配布設定」ではなく、**Windows版のUI非表示を実機前提で切り分ける指示**に絞った方がよいです。
 
-今回は以下の2点を対応してください。
+以下をそのまま渡してください。
 
-1. 最近開いたワークスペースを個別削除・全削除できるようにする
-2. macOS / Windows の両方で配布可能なアプリ形式を作成できるようにする
+# GridDesk 緊急修正指示：Windows版で起動するがUIが表示されない問題の切り分けと修正
 
-   * macOS: `.app` / 必要に応じて `.dmg`
-   * Windows: `.exe` インストーラー / 必要に応じて portable exe
+## 現状
 
-## 重要な前提
+macOS版 `.app` は正常に起動し、UIも表示されます。
+Windows版は以下のどちらも起動はしますが、UIが表示されません。
 
-macOS用 `.app` は macOS 環境で作成してください。
-Windows用 `.exe` は Windows 環境で作成するのが最も安全です。
+* `GridDesk-0.1.0-win-x64-setup.exe`
+* `GridDesk-0.1.0-win-x64-portable.exe`
 
-macOS上から Windows exe をクロスビルドできる場合もありますが、Electron / ネイティブ依存 / 署名 / Wine などの問題があるため、最終確認は Windows 実機または Windows CI で行ってください。
+前回作業では Windows版のビルド生成までは確認されていますが、Windows実機起動確認は未実施です。
 
-今回は、GridDesk プロジェクトとして **macOS / Windows の両方をビルドできる設定・スクリプト・ドキュメント** を整備してください。
+今回は **Windows版でUIが表示されること** を最優先で修正してください。
 
 ---
 
 # 禁止事項
 
-今回は以下を変更しないでください。
+今回は以下を触らないでください。
 
+* 最近開いたワークスペース削除機能
 * セル登録ロジック
-* ファイル/フォルダ起動処理
+* DBスキーマ
 * PDFプレビュー
 * テキストホバー/ピン留め機能
-* Markdown表示ロジック
-* アイコン設定ロジック
-* 検索ロジック
-* DBスキーマの不要な変更
-* 既存ワークスペースデータ構造の破壊
+* Markdown表示
+* アイコン設定
+* 検索機能
+* カテゴリ管理
+* ワークスペース仕様
 
 ---
 
-# 1. 最近開いたワークスペースを削除できるようにする
+# 1. Windowsでは透明ウィンドウを無効化する
 
 ## 目的
 
-現在、最近開いたワークスペースが一覧表示されている場合、その履歴を消す手段がありません。
+Windowsで `transparent: true` / `frame: false` の組み合わせにより、UIが表示されない可能性があります。
 
-以下を追加してください。
-
-* 最近開いたワークスペースを1件ずつ削除
-* 最近開いたワークスペースを全件削除
-* 削除は履歴から消すだけで、実フォルダや `launcher.db` は削除しない
-
----
-
-## 1-1. 保存場所の確認
-
-まず、最近開いたワークスペースの保存場所を確認してください。
-
-候補:
+Windowsではまず確実にUIを表示するため、以下にしてください。
 
 ```text
-settings.json
-app settings
-localStorage
-electron-store
-userData配下のjson
-recentWorkspaces
-recent_workspace
+transparent: false
+backgroundColor: "#f6f7f4"
+frame: true
 ```
 
-既存実装を尊重してください。
-
-もし未整理なら、Electron の userData 配下に保存されるアプリ設定、または既存の settings 保存処理に合わせてください。
-
-推奨構造:
-
-```json
-{
-  "recentWorkspaces": [
-    {
-      "path": "/Users/hashimoto/GridDeskWorkspace",
-      "name": "GridDeskWorkspace",
-      "lastOpenedAt": "2026-06-02T10:20:30.000Z"
-    }
-  ]
-}
-```
-
-既存が文字列配列なら、そのままでも構いません。
-
-```json
-{
-  "recentWorkspaces": [
-    "/Users/hashimoto/GridDeskWorkspace"
-  ]
-}
-```
+macOSでは従来の透過/独自フレームを維持して構いません。
 
 ---
 
-## 1-2. UI仕様
+## 修正対象
 
-最近開いたワークスペース一覧に、削除ボタンを追加してください。
+`electron/main.cjs` の `createWindow()` を確認してください。
 
-表示例:
-
-```text
-最近開いたワークスペース
-
-GridDeskWorkspace
-/Users/hashimoto/GridDeskWorkspace      [開く] [削除]
-
-SampleWorkspace
-/Users/hashimoto/SampleWorkspace        [開く] [削除]
-
-[履歴をすべて削除]
-```
-
-## 削除ボタン
-
-1件削除時は確認ダイアログを出してください。
-
-```text
-このワークスペースを最近開いた履歴から削除しますか？
-実際のフォルダやデータベースは削除されません。
-```
-
-OKなら履歴から削除。
-キャンセルなら何もしない。
-
-## 全削除ボタン
-
-全削除時も確認ダイアログを出してください。
-
-```text
-最近開いたワークスペース履歴をすべて削除しますか？
-実際のフォルダやデータベースは削除されません。
-```
-
----
-
-## 1-3. 関数例
-
-既存 state 名に合わせてください。
-
-```jsx
-function removeRecentWorkspace(workspacePath) {
-  const ok = window.confirm(
-    [
-      "このワークスペースを最近開いた履歴から削除しますか？",
-      "実際のフォルダやデータベースは削除されません。"
-    ].join("\n")
-  );
-
-  if (!ok) return;
-
-  updateSettingsLocal((prev) => {
-    const current = prev.recentWorkspaces ?? prev.ui?.recentWorkspaces ?? [];
-
-    const nextRecent = current.filter((entry) => {
-      const path = typeof entry === "string" ? entry : entry.path;
-      return normalizeWorkspacePath(path) !== normalizeWorkspacePath(workspacePath);
-    });
-
-    return {
-      ...prev,
-      recentWorkspaces: nextRecent,
-      ui: {
-        ...(prev.ui ?? {}),
-        recentWorkspaces: prev.ui?.recentWorkspaces ? nextRecent : prev.ui?.recentWorkspaces
-      }
-    };
-  });
-}
-```
-
-パス正規化:
-
-```jsx
-function normalizeWorkspacePath(path) {
-  return String(path ?? "")
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/\/+$/g, "")
-    .toLowerCase();
-}
-```
-
-全削除:
-
-```jsx
-function clearRecentWorkspaces() {
-  const ok = window.confirm(
-    [
-      "最近開いたワークスペース履歴をすべて削除しますか？",
-      "実際のフォルダやデータベースは削除されません。"
-    ].join("\n")
-  );
-
-  if (!ok) return;
-
-  updateSettingsLocal((prev) => ({
-    ...prev,
-    recentWorkspaces: [],
-    ui: {
-      ...(prev.ui ?? {}),
-      recentWorkspaces: prev.ui?.recentWorkspaces ? [] : prev.ui?.recentWorkspaces
-    }
-  }));
-}
-```
-
-既存保存処理が `saveAppSettings` / `saveSettings` / IPC 経由の場合は、それに合わせてください。
-
----
-
-## 1-4. 完了条件
-
-以下を実画面で確認してください。
-
-* 最近開いたワークスペース一覧が表示される
-* 1件ごとに削除ボタンがある
-* 削除確認が出る
-* OKで履歴から消える
-* キャンセルで残る
-* 全削除ボタンがある
-* 全削除確認が出る
-* OKで履歴が空になる
-* 実際のワークスペースフォルダやDBは削除されない
-* アプリ再起動後も削除状態が維持される
-
----
-
-# 2. macOS / Windows 向け配布アプリ作成
-
-## 目的
-
-GridDesk を開発起動だけでなく、通常のアプリケーションとして配布できるようにします。
-
-対象:
-
-```text
-macOS:
-  .app
-  .dmg
-
-Windows:
-  .exe installer
-  portable exe
-```
-
----
-
-# 2-1. electron-builder を導入する
-
-`electron-builder` が未導入なら追加してください。
-
-```bash
-npm install --save-dev electron-builder
-```
-
-既に導入済みなら重複追加しないでください。
-
----
-
-# 2-2. package.json を確認・修正
-
-`package.json` に build 用 script を追加してください。
-
-推奨:
-
-```json
-{
-  "scripts": {
-    "dev": "vite",
-    "electron": "electron .",
-    "start": "concurrently \"npm run dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "build": "vite build",
-    "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:dir": "npm run build && electron-builder --dir"
-  }
-}
-```
-
-既存 script がある場合は壊さず統合してください。
-
----
-
-# 2-3. electron-builder 設定
-
-`package.json` の `build` フィールド、または `electron-builder.yml` を追加してください。
-
-どちらか一方に統一してください。
-推奨は `electron-builder.yml` です。
-
-## electron-builder.yml 例
-
-```yaml
-appId: jp.griddesk.app
-productName: GridDesk
-
-directories:
-  output: release
-  buildResources: build
-
-files:
-  - dist/**/*
-  - electron/**/*
-  - package.json
-  - node_modules/**/*
-
-asar: true
-
-mac:
-  target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
-  category: public.app-category.productivity
-  hardenedRuntime: false
-  gatekeeperAssess: false
-
-win:
-  target:
-    - target: nsis
-      arch:
-        - x64
-    - target: portable
-      arch:
-        - x64
-  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
-
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-
-extraMetadata:
-  main: electron/main.cjs
-```
-
-注意:
-
-* 署名や notarization は今回必須にしない
-* macOS配布でGatekeeper警告が出る可能性があることを docs に記載
-* Windows Defender / SmartScreen 警告が出る可能性があることを docs に記載
-
----
-
-# 2-4. Vite 本番読み込み確認
-
-Electron main process が開発時と本番時で読み込み先を切り替えているか確認してください。
-
-開発時:
-
-```text
-http://127.0.0.1:5173/
-```
-
-本番時:
-
-```text
-dist/index.html
-```
-
-例:
+現在の `BrowserWindow` 設定をOS別にしてください。
 
 ```js
-if (process.env.NODE_ENV === "development") {
-  mainWindow.loadURL("http://127.0.0.1:5173/");
-} else {
-  mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+const isMac = process.platform === "darwin";
+const isWindows = process.platform === "win32";
+
+function createWindow() {
+  const useTransparentWindow = isMac;
+
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 260,
+    minHeight: 260,
+    title: "GridDesk",
+
+    backgroundColor: useTransparentWindow ? "#00000000" : "#f6f7f4",
+    transparent: useTransparentWindow,
+
+    frame: isWindows ? true : false,
+
+    titleBarStyle: isMac ? "hiddenInset" : undefined,
+    trafficLightPosition: isMac ? { x: 12, y: 12 } : undefined,
+
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  ...
 }
 ```
 
-ただし、実際のディレクトリ構造に合わせてください。
+重要:
 
-electron-builder で packaged 状態でも `dist/index.html` が正しく読み込めるようにしてください。
+```text
+Windows:
+  transparent: false
+  backgroundColor: "#f6f7f4"
+  frame: true
+
+macOS:
+  transparent: true
+  backgroundColor: "#00000000"
+  frame: false
+```
 
 ---
 
-# 2-5. ネイティブ依存の確認
+# 2. Windows版で renderer 読み込みログを出す
 
-SQLiteをCLIで使っている場合、配布後に動くか確認してください。
+Windows実機で原因を確認できるよう、以下のログを `mainWindow` 作成直後に追加してください。
 
-確認対象:
+```js
+mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+  console.error("Renderer did-fail-load", {
+    errorCode,
+    errorDescription,
+    validatedURL
+  });
+});
 
-```text
-sqlite3 CLI を呼んでいるか
-better-sqlite3 を使っているか
-node sqlite library を使っているか
-外部 sqlite バイナリに依存していないか
+mainWindow.webContents.on("render-process-gone", (_event, details) => {
+  console.error("Renderer process gone", details);
+});
+
+mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+  console.log("Renderer console:", {
+    level,
+    message,
+    line,
+    sourceId
+  });
+});
 ```
-
-もし外部 `sqlite3` コマンドに依存している場合、配布アプリでは動作しない可能性があります。
-その場合は以下を検討してください。
-
-```text
-better-sqlite3 などアプリ同梱可能な方式へ移行
-または sqlite バイナリを extraResources で同梱
-```
-
-今回すぐにDB実装を変えない場合でも、必ず注意点として記録してください。
 
 ---
 
-# 2-6. アイコンファイル
+# 3. WindowsでDevToolsを開けるようにする
 
-アプリ用アイコンを設定してください。
+デバッグ時だけ DevTools を開けるようにしてください。
 
-`build/` フォルダを作成し、以下を配置する前提にしてください。
-
-```text
-build/
-  icon.icns
-  icon.ico
-  icon.png
+```js
+if (process.env.GRIDDESK_DEBUG_RENDERER === "1") {
+  mainWindow.webContents.openDevTools({ mode: "detach" });
+}
 ```
 
-まだアイコンファイルが無い場合は、設定だけ準備し、docs に「後で配置」と記載してください。
+Windows確認時は以下で起動してください。
 
-electron-builder.yml に追加:
+PowerShell:
 
-```yaml
-mac:
-  icon: build/icon.icns
-
-win:
-  icon: build/icon.ico
+```powershell
+$env:GRIDDESK_DEBUG_RENDERER="1"
+.\GridDesk.exe
 ```
 
-既にアプリアイコンが存在する場合はそれを使ってください。
+cmd:
+
+```bat
+set GRIDDESK_DEBUG_RENDERER=1
+GridDesk.exe
+```
 
 ---
 
-# 2-7. ビルド成果物
+# 4. Vite asset path を再確認する
 
-期待する出力先:
+macOS版が動いていても、Windows版パッケージで `dist/index.html` が壊れていないか確認してください。
 
-```text
-release/
-  mac/
-  GridDesk-0.1.0-arm64.dmg
-  GridDesk-0.1.0-x64.dmg
-  GridDesk-0.1.0-win-x64.exe
+`dist/index.html` は以下になっている必要があります。
+
+OK:
+
+```html
+<script type="module" crossorigin src="./assets/index-xxxx.js"></script>
+<link rel="stylesheet" crossorigin href="./assets/index-xxxx.css">
 ```
 
-実際のファイル名は electron-builder の出力に合わせてください。
+NG:
+
+```html
+<script type="module" crossorigin src="/assets/index-xxxx.js"></script>
+<link rel="stylesheet" crossorigin href="/assets/index-xxxx.css">
+```
+
+`/assets/...` の場合は、Vite設定に `base: "./"` を追加または再確認してください。
 
 ---
 
-# 2-8. docs 更新
+# 5. Windows向けビルドを再生成する
 
-`README.md` と `/docs/setup.md` または `/docs/build.md` に、ビルド方法を追記してください。
-
-記載内容:
-
-````markdown
-## 配布アプリの作成
-
-### macOS
+macOS側で修正後、以下を実行してください。
 
 ```bash
-npm run dist:mac
-````
-
-出力:
-
-```text
-release/
-```
-
-### Windows
-
-```bash
+node --check electron/main.cjs
+node --check electron/preload.cjs
+npm run build
 npm run dist:win
 ```
 
-Windows版は Windows 環境または Windows CI でビルドすることを推奨します。
+生成物:
 
-### 開発確認
-
-```bash
-npm start
+```text
+release/GridDesk-0.1.0-win-x64-setup.exe
+release/GridDesk-0.1.0-win-x64-portable.exe
+release/win-unpacked/
 ```
 
-### 本番ビルド確認
+Windowsへ渡す場合:
 
-```bash
-npm run build
-npm run dist:dir
-```
-
-### 注意
-
-* macOSの未署名アプリはGatekeeper警告が出る場合があります
-* Windowsの未署名exeはSmartScreen警告が出る場合があります
-* 署名・notarizationは今後対応予定です
-
-````
+* portable exe を渡す
+* または `release/win-unpacked/` フォルダ一式を渡す
+* `win-unpacked/GridDesk.exe` 単体では渡さない
 
 ---
 
-# 2-9. GitHub Actions は任意
+# 6. Windows実機で確認すること
 
-余裕があれば、CI設定を追加してください。
+Windows実機で以下を確認してください。
 
-```text
-.github/workflows/build.yml
-````
-
-ただし、今回は必須ではありません。
-
-必須は以下です。
+## portable版
 
 ```text
-ローカルで npm run dist:mac / npm run dist:win を実行できる設定
+GridDesk-0.1.0-win-x64-portable.exe
+```
+
+確認:
+
+* 起動する
+* UIが表示される
+* ワークスペース選択画面が見える
+* ワークスペース作成/読込ができる
+
+## installer版
+
+```text
+GridDesk-0.1.0-win-x64-setup.exe
+```
+
+確認:
+
+* インストールできる
+* 起動する
+* UIが表示される
+* ワークスペース作成/読込ができる
+
+## win-unpacked版
+
+`win-unpacked` フォルダごとWindowsへコピーして確認してください。
+
+```text
+win-unpacked/
+  GridDesk.exe
+  resources/
+  *.dll
+  locales/
+  ...
+```
+
+`GridDesk.exe` 単体コピーでは不可です。
+
+---
+
+# 7. Windows版UIが出た後の扱い
+
+Windows版で UI が表示されることを確認できたら、Windowsの透明化は一旦不要です。
+
+Windowsの最終推奨設定:
+
+```js
+transparent: false,
+backgroundColor: "#f6f7f4",
+frame: true
+```
+
+macOSの最終推奨設定:
+
+```js
+transparent: true,
+backgroundColor: "#00000000",
+frame: false,
+titleBarStyle: "hiddenInset"
 ```
 
 ---
 
-# 2-10. 完了条件
+# 完了条件
 
-以下を確認してください。
-
-## 設定
-
-* electron-builder が導入されている
-* package.json に dist 系 script がある
-* electron-builder 設定がある
-* 本番時に dist/index.html を読める
-* release フォルダへ出力される
-
-## macOS
-
-* `npm run dist:mac` が実行できる
-* `.app` または `.dmg` が生成される
-* 生成した `.app` を起動できる
-* ワークスペース作成/読込ができる
-
-## Windows
-
-Windows環境で以下を確認してください。
-
-* `npm run dist:win` が実行できる
-* `.exe` が生成される
-* Windowsで起動できる
-* ワークスペース作成/読込ができる
-* ファイル/フォルダ起動が動く
-
-macOS上で Windows exe の実行確認ができない場合は、未確認として明記してください。
+* Windows portable exe でUIが表示される
+* Windows installer exe でUIが表示される
+* Windowsでワークスペース選択画面が表示される
+* Windowsでワークスペース作成/読込ができる
+* macOS app の表示が壊れていない
+* `dist/index.html` の asset path が `./assets/...` である
+* renderer load error が出ていない
 
 ---
 
@@ -562,49 +304,38 @@ macOS上で Windows exe の実行確認ができない場合は、未確認と�
 ```text
 対応結果:
 
-1. 最近開いたワークスペース削除:
-- 1件削除UI追加: OK / NG
-- 全削除UI追加: OK / NG
-- 削除確認ダイアログ: OK / NG
-- 実フォルダを削除しない: OK / NG
-- 再起動後も履歴削除維持: OK / NG
-
-2. 配布アプリ作成:
-- electron-builder 導入: OK / NG
-- package.json scripts追加: OK / NG
-- electron-builder設定追加: OK / NG
-- 本番dist読み込み確認: OK / NG
-- macOS .app/.dmg生成: OK / NG
-- Windows .exe生成: OK / NG
-- README/docs更新: OK / NG
+Windows版UI非表示修正:
+- BrowserWindow設定をOS別分岐: OK / NG
+- Windows transparent:false: OK / NG
+- Windows frame:true: OK / NG
+- Windows backgroundColor設定: OK / NG
+- rendererログ追加: OK / NG
+- debug DevTools起動対応: OK / NG
+- dist/index.html asset path確認: OK / NG
+- Windows portable exe起動確認: OK / NG
+- Windows installer exe起動確認: OK / NG
+- macOS app継続確認: OK / NG
 
 変更ファイル:
-- package.json:
-- electron-builder.yml:
 - electron/main.cjs:
-- electron/preload.cjs:
-- src/App.jsx:
-- src/styles.css:
-- README.md:
-- docs/...:
 - その他:
 
 確認:
-- npm install:
-- npm run build:
-- npm run dist:dir:
-- npm run dist:mac:
-- npm run dist:win:
 - node --check electron/main.cjs:
 - node --check electron/preload.cjs:
-- npm start:
+- npm run build:
+- npm run dist:win:
+- npm run dist:mac:
+- Windows portable exe起動:
+- Windows installer exe起動:
+- macOS app起動:
 
 作業ログ:
 - _md/yyyymmdd-hhmmss.md
 ```
 
 ビルド成功だけで完了扱いにしないでください。
-必ず生成物の有無と、実際に起動確認できた環境を明記してください。
+Windows実機で portable版または installer版を起動し、UIが表示されることを必ず確認してください。
 
 ---
 
@@ -612,65 +343,16 @@ macOS上で Windows exe の実行確認ができない場合は、未確認と�
 
 今回の作業完了後、対応内容をプロジェクトディレクトリ内の `_md/` フォルダへ Markdown ファイルとして必ず書き出してください。
 
-## 出力先
-
-プロジェクトルート直下に `_md/` フォルダを作成してください。
-既に存在する場合はそのまま使用してください。
-
-```text
-<project-root>/
-└─ _md/
-```
-
-## ファイル名
-
-ファイル名は、作業完了時点の日時を使って以下の形式にしてください。
+ファイル名は以下の形式にしてください。
 
 ```text
 yyyymmdd-hhmmss.md
-```
-
-例:
-
-```text
-20260602-203015.md
-```
-
-## 必須記載内容
-
-作成する Markdown には、以下を必ず記載してください。
-
-```markdown
-# 作業ログ: yyyymmdd-hhmmss
-
-## 1. 指示内容
-
-今回ユーザーから依頼された内容、または読ませた指示文の要点を記載してください。
-
-## 2. 対応内容
-
-実際に対応した内容を箇条書きで記載してください。
-
-## 3. 変更ファイル
-
-変更したファイルをすべて記載してください。
-
-## 4. 実装詳細
-
-主要な実装内容を、機能単位で説明してください。
-
-## 5. 確認結果
-
-実行した確認コマンドと結果を記載してください。
-
-## 6. 未対応・注意点
-
-未対応の項目、制約、注意点、確認できなかったことがあれば記載してください。
 ```
 
 この作業ログ作成も完了条件に含めてください。
 ログファイルが作成されていない場合は作業完了扱いにしないでください。
 
+今回のポイントは、**Windowsだけ透明ウィンドウをやめる**ことです。Mac版が正常なら、まずWindows版は通常フレーム・不透明背景で安定表示を優先するのが安全です。
 
 ---
 
@@ -678,55 +360,10 @@ yyyymmdd-hhmmss.md
 
 今回の作業完了後、対応内容をプロジェクトディレクトリ内の `_md/` フォルダへ Markdown ファイルとして必ず書き出してください。
 
-## 出力先
-
-プロジェクトルート直下に `_md/` フォルダを作成してください。
-既に存在する場合はそのまま使用してください。
-
-## ファイル名
-
-ファイル名は、作業完了時点の日時を使って以下の形式にしてください。
+ファイル名は以下の形式にしてください。
 
 ```text
 yyyymmdd-hhmmss.md
-```
-
-例:
-
-```text
-20260602-193012.md
-```
-
-## 必須記載内容
-
-作成する Markdown には、以下を必ず記載してください。
-
-```markdown
-# 作業ログ: yyyymmdd-hhmmss
-
-## 1. 指示内容
-
-今回ユーザーから依頼された内容、または読ませた指示文の要点を記載してください。
-
-## 2. 対応内容
-
-実際に対応した内容を箇条書きで記載してください。
-
-## 3. 変更ファイル
-
-変更したファイルをすべて記載してください。
-
-## 4. 実装詳細
-
-主要な実装内容を、機能単位で説明してください。
-
-## 5. 確認結果
-
-実行した確認コマンドと結果を記載してください。
-
-## 6. 未対応・注意点
-
-未対応の項目、制約、注意点、確認できなかったことがあれば記載してください。
 ```
 
 この作業ログ作成も完了条件に含めてください。

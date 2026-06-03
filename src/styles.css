@@ -364,14 +364,62 @@ label {
   gap: 8px;
 }
 
+.recentListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .recentList h2 {
   margin: 0;
   font-size: 14px;
 }
 
-.recentList button {
+.recentClearButton {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.recentWorkspaceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.recentWorkspaceOpen {
   justify-content: flex-start;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.recentWorkspaceName,
+.recentWorkspacePath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentWorkspaceName {
+  font-weight: 700;
+}
+
+.recentWorkspacePath {
+  color: #6b756f;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.recentWorkspaceDelete {
+  justify-content: center;
+  padding: 0;
+  color: #9f3a3a;
 }
 
 .workspace,

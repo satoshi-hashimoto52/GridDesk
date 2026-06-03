@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("gridDesk", {
   getState: () => ipcRenderer.invoke("app:getState"),
+  removeRecentWorkspace: (workspacePath) => ipcRenderer.invoke("app:removeRecentWorkspace", workspacePath),
+  clearRecentWorkspaces: () => ipcRenderer.invoke("app:clearRecentWorkspaces"),
   createWorkspace: () => ipcRenderer.invoke("workspace:create"),
   openWorkspace: () => ipcRenderer.invoke("workspace:open"),
   openWorkspacePath: (workspacePath) => ipcRenderer.invoke("workspace:openPath", workspacePath),

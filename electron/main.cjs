@@ -29,6 +29,8 @@ const TEXT_PREVIEW_EXTENSIONS = new Set([
 ]);
 
 const isDev = !app.isPackaged;
+const isMac = process.platform === "darwin";
+const isWindows = process.platform === "win32";
 const appStatePath = () => path.join(app.getPath("userData"), "state.json");
 
 const defaultSettings = {
@@ -218,6 +220,19 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
 }
 
+function readAppState() {
+  return readJson(appStatePath(), { recentWorkspaces: [] });
+}
+
+function writeAppState(state) {
+  writeJson(appStatePath(), state);
+  return state;
+}
+
+function normalizeWorkspaceHistoryKey(workspacePath) {
+  return String(workspacePath || "").trim().replace(/[\\/]+$/g, "").toLowerCase();
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -377,12 +392,27 @@ WHERE enabled = 1;
 }
 
 function rememberWorkspace(workspacePath) {
-  const state = readJson(appStatePath(), { recentWorkspaces: [] });
+  const state = readAppState();
+  const targetKey = normalizeWorkspaceHistoryKey(workspacePath);
   const recentWorkspaces = [
     workspacePath,
-    ...(state.recentWorkspaces || []).filter((item) => item !== workspacePath)
+    ...(state.recentWorkspaces || []).filter((item) => normalizeWorkspaceHistoryKey(item) !== targetKey)
   ].slice(0, 8);
-  writeJson(appStatePath(), { ...state, recentWorkspaces });
+  writeAppState({ ...state, recentWorkspaces });
+}
+
+function removeRecentWorkspace(workspacePath) {
+  const state = readAppState();
+  const targetKey = normalizeWorkspaceHistoryKey(workspacePath);
+  const recentWorkspaces = (state.recentWorkspaces || []).filter((item) => {
+    return normalizeWorkspaceHistoryKey(item) !== targetKey;
+  });
+  return writeAppState({ ...state, recentWorkspaces });
+}
+
+function clearRecentWorkspaces() {
+  const state = readAppState();
+  return writeAppState({ ...state, recentWorkspaces: [] });
 }
 
 async function getWorkspaceData(workspacePath) {
@@ -469,23 +499,49 @@ function resolveTarget(workspacePath, targetPath, pathType) {
 let mainWindow;
 
 function createWindow() {
+  const useTransparentWindow = isMac;
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 260,
-    minHeight: 260,
+    minWidth: 100,
+    minHeight: 100,
     title: "GridDesk",
-    backgroundColor: "#00000000",
-    transparent: true,
-    frame: false,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
-    trafficLightPosition: process.platform === "darwin" ? { x: 12, y: 12 } : undefined,
+    backgroundColor: useTransparentWindow ? "#00000000" : "#f6f7f4",
+    transparent: useTransparentWindow,
+    frame: isWindows ? true : false,
+    titleBarStyle: isMac ? "hiddenInset" : undefined,
+    trafficLightPosition: isMac ? { x: 12, y: 12 } : undefined,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
+
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.error("Renderer did-fail-load", {
+      errorCode,
+      errorDescription,
+      validatedURL
+    });
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("Renderer process gone", details);
+  });
+
+  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    console.log("Renderer console:", {
+      level,
+      message,
+      line,
+      sourceId
+    });
+  });
+
+  if (process.env.GRIDDESK_DEBUG_RENDERER === "1") {
+    mainWindow.webContents.openDevTools({ mode: "detach" });
+  }
 
   if (isDev) {
     mainWindow.loadURL("http://127.0.0.1:5173");
@@ -502,7 +558,9 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-ipcMain.handle("app:getState", () => readJson(appStatePath(), { recentWorkspaces: [] }));
+ipcMain.handle("app:getState", () => readAppState());
+ipcMain.handle("app:removeRecentWorkspace", (_event, workspacePath) => removeRecentWorkspace(workspacePath));
+ipcMain.handle("app:clearRecentWorkspaces", () => clearRecentWorkspaces());
 
 ipcMain.handle("system:getOpenAtLogin", async () => {
   const loginSettings = app.getLoginItemSettings();
