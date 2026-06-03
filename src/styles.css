@@ -974,6 +974,11 @@ label {
   overflow: hidden;
 }
 
+.gridCell.searchHighlightCell {
+  overflow: visible;
+  z-index: 3;
+}
+
 .cell.dragTarget,
 .gridCell.dragTarget {
   border-color: #22c55e !important;
@@ -1088,36 +1093,87 @@ label {
 .iconCard.searchHighlight,
 .launcherItem.searchHighlight,
 .itemCard.searchHighlight {
-  background: inherit;
-  outline: 2px solid rgba(57, 255, 20, 0.95);
-  outline-offset: 3px;
-  border-color: rgba(57, 255, 20, 0.95) !important;
+  position: relative;
+  border-color: rgba(57, 255, 20, 1) !important;
+  outline: none !important;
   box-shadow:
-    0 0 0 1px rgba(57, 255, 20, 0.70),
-    0 0 10px rgba(57, 255, 20, 0.72),
-    0 0 22px rgba(57, 255, 20, 0.50),
-    0 0 36px rgba(57, 255, 20, 0.28);
-  animation: searchHighlightBorderPulse 0.95s ease-in-out infinite;
+    inset 0 0 0 1px rgba(57, 255, 20, 0.95),
+    0 0 0 1px rgba(57, 255, 20, 0.85),
+    0 0 3px rgba(57, 255, 20, 0.95),
+    0 0 7px rgba(57, 255, 20, 0.70),
+    0 0 11px rgba(57, 255, 20, 0.42) !important;
+  animation: searchHighlightNeonPulse 0.85s ease-in-out infinite;
+  isolation: isolate;
 }
 
-@keyframes searchHighlightBorderPulse {
+.iconCard.searchHighlight::before,
+.launcherItem.searchHighlight::before,
+.itemCard.searchHighlight::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 1px solid rgba(57, 255, 20, 0.92);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 4;
+  box-shadow:
+    0 0 2px rgba(57, 255, 20, 0.95),
+    0 0 5px rgba(57, 255, 20, 0.72),
+    0 0 9px rgba(57, 255, 20, 0.46);
+  animation: searchHighlightNeonRingPulse 0.85s ease-in-out infinite;
+}
+
+.iconCard.searchHighlight::after,
+.launcherItem.searchHighlight::after,
+.itemCard.searchHighlight::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(210, 255, 190, 0.9);
+  border-radius: calc(var(--gd-cell-radius, 8px) - 2px);
+  pointer-events: none;
+  z-index: 5;
+  box-shadow:
+    inset 0 0 2px rgba(57, 255, 20, 0.34);
+}
+
+.iconCard.brokenPath.searchHighlight,
+.launcherItem.brokenPath.searchHighlight,
+.itemCard.brokenPath.searchHighlight {
+  border-color: rgba(57, 255, 20, 1) !important;
+}
+
+@keyframes searchHighlightNeonPulse {
   0%, 100% {
-    outline-color: rgba(57, 255, 20, 0.72);
-    border-color: rgba(57, 255, 20, 0.72);
+    filter: brightness(1);
     box-shadow:
-      0 0 0 1px rgba(57, 255, 20, 0.42),
-      0 0 8px rgba(57, 255, 20, 0.45),
-      0 0 18px rgba(57, 255, 20, 0.30);
+      inset 0 0 0 1px rgba(57, 255, 20, 0.78),
+      0 0 0 1px rgba(57, 255, 20, 0.65),
+      0 0 3px rgba(57, 255, 20, 0.72),
+      0 0 6px rgba(57, 255, 20, 0.48),
+      0 0 9px rgba(57, 255, 20, 0.26);
   }
 
   50% {
-    outline-color: rgba(57, 255, 20, 1);
-    border-color: rgba(57, 255, 20, 1);
+    filter: brightness(1.18);
     box-shadow:
-      0 0 0 2px rgba(57, 255, 20, 0.75),
-      0 0 16px rgba(57, 255, 20, 0.85),
-      0 0 30px rgba(57, 255, 20, 0.55),
-      0 0 46px rgba(57, 255, 20, 0.32);
+      inset 0 0 0 1.5px rgba(57, 255, 20, 1),
+      0 0 0 1.5px rgba(57, 255, 20, 0.95),
+      0 0 4px rgba(57, 255, 20, 1),
+      0 0 9px rgba(57, 255, 20, 0.82),
+      0 0 15px rgba(57, 255, 20, 0.48);
+  }
+}
+
+@keyframes searchHighlightNeonRingPulse {
+  0%, 100% {
+    opacity: 0.76;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.009);
   }
 }
 

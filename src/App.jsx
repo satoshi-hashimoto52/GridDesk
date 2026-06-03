@@ -3141,6 +3141,16 @@ function Cell({
     showTypeBadge ? "hasTypeBadge" : "noTypeBadge",
     showFileName ? "hasFileName" : "noFileName"
   ].filter(Boolean).join(" ");
+  const cellClassName = [
+    "cell",
+    "gridCell",
+    disabled ? "disabled" : "",
+    selected ? "selected" : "",
+    registerMode ? "registerReady" : "",
+    deleteCellMode ? "deleteReady" : "",
+    dragTarget ? "dragTarget" : "",
+    searchHighlighted ? "searchHighlightCell" : ""
+  ].filter(Boolean).join(" ");
   const [menu, setMenu] = useState(null);
 
   function handleItemContextMenu(event) {
@@ -3190,7 +3200,7 @@ function Cell({
 
   return (
     <div
-      className={`cell gridCell ${disabled ? "disabled" : ""} ${selected ? "selected" : ""} ${registerMode ? "registerReady" : ""} ${deleteCellMode ? "deleteReady" : ""} ${dragTarget ? "dragTarget" : ""}`}
+      className={cellClassName}
       onClick={onClick}
       onDragOver={(event) => {
         event.preventDefault();
