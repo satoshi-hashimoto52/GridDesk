@@ -3583,6 +3583,37 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
     onUpdate({ ui: { settingsSections: { [key]: open } } });
   }
 
+  function confirmDeleteExtensionIconSetting(extension) {
+    return window.confirm(
+      [
+        `拡張子 ".${extension}" のアイコン設定を削除しますか？`,
+        "",
+        "この拡張子のファイルは、以後ファイル汎用アイコン設定で表示されます。",
+        "この操作は元に戻せません。"
+      ].join("\n")
+    );
+  }
+
+  function handleDeleteExtensionIconSetting(extension) {
+    if (!confirmDeleteExtensionIconSetting(extension)) return;
+    onDeleteExtensionIconType(extension);
+  }
+
+  function resetExtensionIconSettings() {
+    const ok = window.confirm(
+      [
+        "拡張子アイコン設定を初期化しますか？",
+        "",
+        "登録済みの拡張子別アイコン設定がリセットされます。",
+        "フォルダ設定や種類別アイコン設定は削除されません。",
+        "",
+        "この操作は元に戻せません。"
+      ].join("\n")
+    );
+    if (!ok) return;
+    onResetIconTypes();
+  }
+
   function openIconPicker(row) {
     setIconPickerTarget({ type: row.rowType, key: row.key });
     setIconPickerQuery("");
@@ -3915,14 +3946,32 @@ function SettingsPanel({ settings, onUpdate, onAddExtensionIconTypes, onUpdateIc
                       {row.fixed ? (
                         <span className="iconSettingFixedLabel">固定</span>
                       ) : (
-                        <button type="button" className="miniDangerButton" onClick={() => onDeleteExtensionIconType(row.key)}>削除</button>
+                        <button
+                          type="button"
+                          className="extensionIconSettingDeleteButton"
+                          onClick={() => handleDeleteExtensionIconSetting(row.key)}
+                        >
+                          削除
+                        </button>
                       )}
                     </div>
                   );
                 })}
               </div>
             </div>
-            <button onClick={onResetIconTypes}>拡張子アイコン設定を初期化</button>
+            <div className="iconSettingsDangerZone">
+              <div className="iconSettingsDangerZoneText">
+                <strong>危険操作</strong>
+                <span>拡張子別アイコン設定を初期状態に戻します。</span>
+              </div>
+              <button
+                type="button"
+                className="danger compactDangerButton"
+                onClick={resetExtensionIconSettings}
+              >
+                拡張子アイコン設定を初期化
+              </button>
+            </div>
             </div>
           </details>
 

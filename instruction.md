@@ -1,392 +1,350 @@
-# GridDesk 緊急修正指示：設定アイコン反映不具合・フォルダ起動不具合の修正
+# GridDesk 修正指示：拡張子アイコン設定の初期化/削除操作を安全にする
 
-## 症状
+## 目的
 
-現在、以下の不具合が発生しています。
+設定画面の「アイコン設定」内にある **拡張子アイコン設定** について、以下の問題を修正してください。
 
-1. 設定からアイコンを変更しても、既に配置済みのセルアイコンが変化しない
-2. フォルダをダブルクリックしても開かなくなった
+1. 「初期化」ボタンが大きく、誤押下しやすい
+2. 初期化ボタンの配置が通常操作に近すぎる
+3. 拡張子アイコン設定の削除操作に確認がなく、誤削除しやすい
+4. 操作動線として、通常編集操作と危険操作の区別が弱い
 
-今回はこの2点のみ修正してください。
+今回は、**ボタンサイズ・配置・削除確認** を中心に改善してください。
 
 ---
 
 # 禁止事項
 
-今回は以下を触らないでください。
+今回は以下を変更しないでください。
 
 * DBスキーマ
-* セル登録仕様
-* カテゴリ管理仕様
+* セル登録ロジック
+* カテゴリ管理ロジック
+* ファイル/フォルダ起動処理
 * PDFプレビュー
 * テキストホバー/ピン留め
 * Markdown表示
 * 検索機能
-* 最近開いたワークスペース履歴
 * Windows版 better-sqlite3 対応
-* 配布ビルド設定の大幅変更
+* 配布ビルド設定
+* アイコン設定の保存形式
 
 ---
 
-# 1. 設定からアイコン変更しても配置済みアイコンが変化しない問題
+# 1. 初期化ボタンを小さくし、危険操作として分離する
 
-## 想定原因
+## 現状
 
-最近の修正で、配置済みアイテム側に以下のような個別アイコン値を保存・優先する実装が残っている可能性があります。
-
-```text
-item.iconName
-item.icon_name
-item.icon_color
-item.icon_background_color
-item.icon_background_opacity
-```
-
-そのため、設定画面で種類別・拡張子別・フォルダ用アイコンを変更しても、既存アイテムが item 側の古い値を優先してしまい、表示が更新されない可能性があります。
-
----
+拡張子アイコン設定の「初期化」ボタンが大きく、通常の編集操作中に誤って押しやすいです。
 
 ## 変更後仕様
 
-設定のアイコン変更は、配置済みアイコンにも即時反映してください。
+「初期化」ボタンは、通常操作から離した位置に配置してください。
 
-基本方針:
+推奨:
 
 ```text
-通常表示:
-  設定側のアイコンルールを使って描画する
+拡張子アイコン設定
+[拡張子入力] [追加]
 
-個別アイコン変更を明示したアイテムのみ:
-  item個別設定を優先する
+登録済み一覧
+...
+
+詳細操作 / 危険操作
+[拡張子アイコン設定を初期化]
 ```
 
-ただし、現状で個別アイコン編集が不安定なら、まずは **配置済みアイコンも常に設定側を参照する** 形に戻してください。
+つまり、初期化ボタンは一覧の近くや追加ボタンの横ではなく、**セクション下部の危険操作エリア** に移動してください。
 
 ---
 
-## アイコン解決優先順位
+## ボタンサイズ
 
-`resolveItemIconConfig(item)` または類似の関数を確認し、以下の優先順位にしてください。
+初期化ボタンは大きすぎないサイズにしてください。
 
-```text
-1. item に明示的な個別アイコン設定がある場合のみ、それを使う
-2. フォルダなら settings の folder 設定
-3. URLなら settings の url 設定
-4. アプリなら settings の app 設定
-5. 通常ファイルなら拡張子別設定
-6. 通常ファイル汎用設定
-```
+例:
 
-重要:
-
-* 登録時に自動保存された古い `iconName` / `icon_color` を「個別設定」とみなさないこと
-* ユーザーが右クリック等で明示的に個別変更した場合のみ、個別設定として扱うこと
-* その判定用のフラグが無いなら、今回は item 側の icon 系カラムを表示解決で使わないこと
-
----
-
-## 修正例
-
-現在このようになっている場合:
-
-```js
-function resolveItemIconConfig(item) {
-  if (item.iconName || item.icon_name) {
-    return {
-      iconName: item.iconName ?? item.icon_name,
-      color: item.iconColor ?? item.icon_color,
-      backgroundColor: item.iconBackgroundColor ?? item.icon_background_color,
-      backgroundOpacity: item.iconBackgroundOpacity ?? item.icon_background_opacity
-    };
-  }
-
-  return resolveFromSettings(item);
+```css
+.iconSettingsDangerZone .dangerButton {
+  width: auto;
+  min-width: 0;
+  max-width: fit-content;
+  padding: 5px 9px;
+  font-size: 11px;
 }
 ```
 
-以下のように修正してください。
+「目立たせる」よりも「誤押下しにくい」ことを優先してください。
+
+---
+
+## ラベル
+
+現在のラベルが単に `初期化` の場合は、意味が分かるようにしてください。
+
+推奨:
+
+```text
+拡張子アイコン設定を初期化
+```
+
+---
+
+# 2. 初期化にも確認ダイアログを出す
+
+初期化ボタン押下時は、必ず確認してください。
+
+確認文例:
+
+```text
+拡張子アイコン設定を初期化しますか？
+
+登録済みの拡張子別アイコン設定がリセットされます。
+フォルダ設定や種類別アイコン設定は削除されません。
+
+この操作は元に戻せません。
+```
+
+OKの場合のみ初期化してください。
+キャンセルの場合は何もしないでください。
+
+実装例:
 
 ```js
-function resolveItemIconConfig(item) {
-  const hasExplicitItemIcon =
-    item.custom_icon_enabled === 1 ||
-    item.customIconEnabled === true ||
-    item.icon_override === 1 ||
-    item.iconOverride === true;
+function resetExtensionIconSettings() {
+  const ok = window.confirm(
+    [
+      "拡張子アイコン設定を初期化しますか？",
+      "",
+      "登録済みの拡張子別アイコン設定がリセットされます。",
+      "フォルダ設定や種類別アイコン設定は削除されません。",
+      "",
+      "この操作は元に戻せません。"
+    ].join("\n")
+  );
 
-  if (hasExplicitItemIcon) {
-    return {
-      iconName: item.iconName ?? item.icon_name,
-      color: item.iconColor ?? item.icon_color,
-      backgroundColor: item.iconBackgroundColor ?? item.icon_background_color,
-      backgroundOpacity: item.iconBackgroundOpacity ?? item.icon_background_opacity
-    };
-  }
+  if (!ok) return;
 
-  return resolveIconConfigFromSettings(item);
+  updateSettingsLocal((prev) => ({
+    ...prev,
+    ui: {
+      ...prev.ui,
+      extensionIcons: getDefaultExtensionIconSettings()
+    }
+  }));
 }
 ```
 
-もし `custom_icon_enabled` のようなフラグが存在しない場合は、今回は安全優先で以下にしてください。
-
-```js
-function resolveItemIconConfig(item) {
-  return resolveIconConfigFromSettings(item);
-}
-```
+既存の設定構造に合わせてください。
 
 ---
 
-## settings変更時の再描画
+# 3. 拡張子行の削除に確認ダイアログを追加する
 
-設定変更後、配置済みアイコンが再描画されるようにしてください。
+## 現状
 
-以下を確認してください。
-
-```text
-settings state が更新されている
-resolveItemIconConfig が settings を参照している
-React の render 内で resolveItemIconConfig(item) を呼んでいる
-useMemo の依存配列に settings が入っている
-```
-
-NG例:
-
-```js
-const renderedItems = useMemo(() => {
-  return items.map(...)
-}, [items]);
-```
-
-settings を使っているなら、依存配列に settings を追加してください。
-
-```js
-const renderedItems = useMemo(() => {
-  return items.map(...)
-}, [items, settings]);
-```
-
-また、アイコン設定変更後に `items` の再読込だけに頼らないでください。
-settings state 更新だけで即時反映されるのが望ましいです。
-
----
-
-## フォルダ固定行との関係
-
-アイコン設定一覧の先頭にある `フォルダ` 行でアイコン・線色・背景色・背景透過を変更したら、既に配置済みのフォルダセルにも反映してください。
-
-確認対象:
-
-```text
-フォルダ行のアイコン変更
-フォルダ行の線色変更
-フォルダ行の背景色変更
-フォルダ行の背景透過変更
-```
-
----
-
-## 完了条件
-
-以下を実画面で確認してください。
-
-* 設定画面で `pdf` のアイコンを変更すると、既存の pdf セルアイコンが変わる
-* 設定画面で `txt` の色を変更すると、既存の txt セルアイコン色が変わる
-* 設定画面で `フォルダ` のアイコンを変更すると、既存のフォルダセルアイコンが変わる
-* 設定画面で `フォルダ` の色を変更すると、既存のフォルダセルアイコン色が変わる
-* アプリ再起動後も設定が維持される
-* 明示的な個別アイコン変更機能がある場合、その個別変更だけは優先される
-
----
-
-# 2. フォルダが開かなくなった問題
-
-## 想定原因
-
-Mac安定版復旧、Windows対応、または起動処理変更の中で、フォルダ起動時の `shell.openPath()` / `shell.showItemInFolder()` の分岐が壊れた可能性があります。
-
-または、item type 判定が変わり、フォルダが通常ファイルやURL扱いになっている可能性があります。
-
----
+拡張子アイコン設定の削除操作時に確認がなく、誤って削除しやすいです。
 
 ## 変更後仕様
 
-フォルダセルをダブルクリックした場合、OS標準のファイルマネージャでそのフォルダを開いてください。
+各拡張子行の削除ボタンを押したら、必ず確認してください。
 
-macOS:
-
-```text
-Finder でフォルダを開く
-```
-
-Windows:
+確認文例:
 
 ```text
-Explorer でフォルダを開く
+拡張子 ".pdf" のアイコン設定を削除しますか？
+
+この拡張子のファイルは、以後ファイル汎用アイコン設定で表示されます。
+この操作は元に戻せません。
 ```
 
-Electronでは基本的に以下を使ってください。
+OKの場合のみ削除。
+キャンセルの場合は何もしない。
+
+実装例:
 
 ```js
-shell.openPath(folderPath)
+function confirmDeleteExtensionIconSetting(extension) {
+  return window.confirm(
+    [
+      `拡張子 ".${extension}" のアイコン設定を削除しますか？`,
+      "",
+      "この拡張子のファイルは、以後ファイル汎用アイコン設定で表示されます。",
+      "この操作は元に戻せません。"
+    ].join("\n")
+  );
+}
+
+function handleDeleteExtensionIconSetting(extension) {
+  const ok = confirmDeleteExtensionIconSetting(extension);
+
+  if (!ok) return;
+
+  deleteExtensionIconSetting(extension);
+}
 ```
+
+既存の削除処理を直接呼んでいる箇所を、上記の確認付き関数経由にしてください。
 
 ---
 
-## main 側の起動処理を確認
+# 4. 削除ボタンも小さくする
 
-`electron/main.cjs` で以下を検索してください。
+拡張子行内の削除ボタンは、行全体を占有する大きなボタンにしないでください。
 
-```text
-item:open
-openPath
-showItemInFolder
-shell.openExternal
-shell.openPath
-open item
+推奨:
+
+```css
+.extensionIconSettingDeleteButton {
+  width: auto;
+  min-width: 44px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  border-radius: 7px;
+}
 ```
 
-フォルダの場合は必ず `shell.openPath(item.path)` を使ってください。
+また、色は危険操作として赤系にして構いませんが、強すぎる塗りつぶしよりも控えめな赤枠を推奨します。
 
-例:
+```css
+.extensionIconSettingDeleteButton {
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+}
 
-```js
-ipcMain.handle("item:open", async (_event, item) => {
-  try {
-    const targetPath = item?.path;
-
-    if (!targetPath) {
-      return { ok: false, error: "パスが空です" };
-    }
-
-    if (/^https?:\/\//i.test(targetPath)) {
-      await shell.openExternal(targetPath);
-      return { ok: true };
-    }
-
-    const stat = await fs.promises.stat(targetPath);
-
-    if (stat.isDirectory()) {
-      const errorMessage = await shell.openPath(targetPath);
-
-      if (errorMessage) {
-        return { ok: false, error: errorMessage };
-      }
-
-      return { ok: true };
-    }
-
-    const errorMessage = await shell.openPath(targetPath);
-
-    if (errorMessage) {
-      return { ok: false, error: errorMessage };
-    }
-
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: String(error?.message ?? error)
-    };
-  }
-});
-```
-
-重要:
-
-* フォルダは `shell.showItemInFolder(folderPath)` ではなく `shell.openPath(folderPath)` を使う
-* `showItemInFolder()` はファイルの場所を開く用途
-* フォルダそのものを開きたい場合は `openPath()`
-
----
-
-## renderer 側のダブルクリック処理を確認
-
-`src/App.jsx` で以下を検索してください。
-
-```text
-onDoubleClick
-handleIconDoubleClick
-openItem
-api.openItem
-deleteCellMode
-registerMode
-```
-
-以下を確認してください。
-
-```text
-通常モードでダブルクリックしたときだけ openItem が呼ばれる
-削除モードでは起動しない
-登録モードでは起動しない
-フォルダ item も openItem に渡される
-```
-
-例:
-
-```js
-function handleIconDoubleClick(event, item) {
-  event.preventDefault();
-  event.stopPropagation();
-
-  if (registerMode || deleteCellMode) {
-    return;
-  }
-
-  openItem(item);
+.extensionIconSettingDeleteButton:hover {
+  background: rgba(239, 68, 68, 0.16);
 }
 ```
 
 ---
 
-## preload 側の API を確認
+# 5. 危険操作エリアを作る
 
-`electron/preload.cjs` で `openItem` が公開されていることを確認してください。
+拡張子アイコン設定セクションの下部に、危険操作エリアを設けてください。
 
-```js
-openItem: (item) => ipcRenderer.invoke("item:open", item)
+JSX例:
+
+```jsx
+<div className="iconSettingsDangerZone">
+  <div className="iconSettingsDangerZoneText">
+    <strong>危険操作</strong>
+    <span>拡張子別アイコン設定を初期状態に戻します。</span>
+  </div>
+
+  <button
+    type="button"
+    className="dangerButton compactDangerButton"
+    onClick={resetExtensionIconSettings}
+  >
+    拡張子アイコン設定を初期化
+  </button>
+</div>
 ```
 
-名前が既存と違う場合は既存名に合わせてください。
+CSS例:
 
----
+```css
+.iconSettingsDangerZone {
+  margin-top: 12px;
+  padding: 9px;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
 
-## ログ追加
+.iconSettingsDangerZoneText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
 
-フォルダが開かない場合に原因が見えるよう、一時ログを追加してください。
+.iconSettingsDangerZoneText span {
+  opacity: 0.72;
+}
 
-```js
-console.log("Opening item", {
-  path: targetPath,
-  type: item?.type,
-  kind: item?.kind
-});
+.compactDangerButton {
+  flex-shrink: 0;
+  width: auto;
+  min-width: 0;
+  max-width: fit-content;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  border-radius: 8px;
+}
 ```
 
-失敗時は renderer 側で alert または console.error に出してください。
+設定画面の幅が狭い場合は折り返してもよいです。
 
-```js
-const result = await window.griddesk.openItem(item);
+```css
+@media (max-width: 720px) {
+  .iconSettingsDangerZone {
+    align-items: stretch;
+    flex-direction: column;
+  }
 
-if (result?.ok === false) {
-  console.error("Failed to open item", result);
-  alert(result.error || "開けませんでした");
+  .compactDangerButton {
+    align-self: flex-start;
+  }
 }
 ```
 
 ---
 
-## 完了条件
+# 6. フォルダ固定行は削除不可を維持する
+
+先頭の `フォルダ` 固定行は削除不可のままにしてください。
+
+削除列には以下のような表示で構いません。
+
+```text
+固定
+```
+
+または空欄で構いません。
+
+ただし、フォルダ行に削除ボタンを出さないでください。
+
+---
+
+# 7. 完了条件
 
 以下を実画面で確認してください。
 
-* macOSでフォルダセルをダブルクリックするとFinderで開く
-* macOSでファイルセルをダブルクリックすると既定アプリで開く
-* URLセルをダブルクリックするとブラウザで開く
-* WindowsではフォルダセルをダブルクリックするとExplorerで開く
-* 起動失敗時にエラー内容が確認できる
-* 削除モードではダブルクリック起動しない
-* 登録モードではダブルクリック起動しない
+## 初期化ボタン
+
+* 初期化ボタンが通常操作エリアから離れている
+* 初期化ボタンが大きすぎない
+* ラベルが「拡張子アイコン設定を初期化」のように具体的
+* 押下時に確認ダイアログが出る
+* キャンセルすると何も変わらない
+* OKすると拡張子アイコン設定が初期化される
+* フォルダ設定は初期化対象外
+
+## 削除ボタン
+
+* 各拡張子行の削除ボタンが小さくなっている
+* 削除ボタンが通常編集操作と見分けやすい
+* 押下時に確認ダイアログが出る
+* キャンセルすると削除されない
+* OKすると該当拡張子だけ削除される
+* フォルダ固定行には削除ボタンがない
+
+## 既存機能
+
+* 拡張子アイコンの追加ができる
+* 拡張子アイコンの編集ができる
+* 色やHEX入力が維持される
+* 設定保存/復元が壊れていない
 
 ---
 
@@ -395,26 +353,18 @@ if (result?.ok === false) {
 ```text
 対応結果:
 
-1. 設定アイコン反映修正:
-- アイコン解決優先順位確認: OK / NG
-- item側古いicon値の自動優先を停止: OK / NG
-- settings変更で既存配置アイコン即時反映: OK / NG
-- フォルダ設定変更の既存フォルダ反映: OK / NG
-- useMemo依存配列確認: OK / NG
-
-2. フォルダ起動修正:
-- item:open 処理確認: OK / NG
-- フォルダは shell.openPath 使用: OK / NG
-- showItemInFolder誤用修正: OK / NG
-- rendererダブルクリック処理確認: OK / NG
-- preload API確認: OK / NG
-- macOS Finderでフォルダ起動確認: OK / NG
-- ファイル/URL起動維持: OK / NG
+拡張子アイコン設定 危険操作UI改善:
+- 初期化ボタンを危険操作エリアへ移動: OK / NG
+- 初期化ボタン小型化: OK / NG
+- 初期化確認ダイアログ追加: OK / NG
+- 削除確認ダイアログ追加: OK / NG
+- 削除ボタン小型化: OK / NG
+- フォルダ固定行の削除不可維持: OK / NG
+- 既存の追加/編集/保存復元維持: OK / NG
 
 変更ファイル:
 - src/App.jsx:
-- electron/main.cjs:
-- electron/preload.cjs:
+- src/styles.css:
 - その他:
 
 確認:
@@ -422,16 +372,34 @@ if (result?.ok === false) {
 - node --check electron/preload.cjs:
 - npm run build:
 - npm run dist:dir:
-- macOS .app 起動:
-- フォルダ起動:
-- 設定アイコン変更反映:
+- Mac .app 起動確認:
+- 初期化キャンセル確認:
+- 初期化OK確認:
+- 削除キャンセル確認:
+- 削除OK確認:
 
 作業ログ:
 - _md/yyyymmdd-hhmmss.md
 ```
 
 ビルド成功だけで完了扱いにしないでください。
-必ず実画面で、設定変更後に配置済みアイコンが変わることと、フォルダがFinder/Explorerで開くことを確認してください。
+必ず実画面で、初期化と削除の確認ダイアログが出ること、キャンセル時に変更されないことを確認してください。
+
+---
+
+# 作業ログ出力ルール
+
+今回の作業完了後、対応内容をプロジェクトディレクトリ内の `_md/` フォルダへ Markdown ファイルとして必ず書き出してください。
+
+ファイル名は以下の形式にしてください。
+
+```text
+yyyymmdd-hhmmss.md
+```
+
+この作業ログ作成も完了条件に含めてください。
+ログファイルが作成されていない場合は作業完了扱いにしないでください。
+
 
 ---
 
